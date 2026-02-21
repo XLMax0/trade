@@ -806,12 +806,6 @@ if showDashboard and barstate.islast
     table.merge_cells(dashboard, 0, 12, 1, 12)
 
     // Module breakdown
-    f_scoreColor(s) =>
-        s > 20 ? color.new(#00E676, 0) : s < -20 ? color.new(#FF5252, 0) : color.new(#FFC107, 0)
-
-    f_scoreIcon(s) =>
-        s > 20 ? "▲ " : s < -20 ? "▼ " : "◆ "
-
     moduleNames  = array.from("VWAP", "OB/FVG", "PriceAct", "S/R", "Fib", "RSI", "EMA", "Volume", "StochRSI")
     moduleScores = array.from(vwapScore, obScore, paScore, srScore, fibScore, rsiScore, emaScore, volScore, stochScore)
     moduleOn     = array.from(useVwap, useOB, usePA, useSR, useFib, useRSI, useEMA, useVol, useStoch)
@@ -824,6 +818,15 @@ if showDashboard and barstate.islast
             table.cell(dashboard, 0, row, array.get(moduleNames, i), bgcolor=bg, text_color=labelTxt, text_size=size.tiny, text_halign=text.align_left)
             table.cell(dashboard, 1, row, f_scoreIcon(sc) + str.tostring(sc, "#.#"), bgcolor=bg, text_color=f_scoreColor(sc), text_size=size.tiny, text_halign=text.align_right)
             row += 1
+
+// ============================================================================
+// HELPER FUNCTIONS FOR DASHBOARD
+// ============================================================================
+f_scoreColor(s) =>
+    s > 20 ? color.new(#00E676, 0) : s < -20 ? color.new(#FF5252, 0) : color.new(#FFC107, 0)
+
+f_scoreIcon(s) =>
+    s > 20 ? "▲ " : s < -20 ? "▼ " : "◆ "
 
 // ============================================================================
 // ALERTS
