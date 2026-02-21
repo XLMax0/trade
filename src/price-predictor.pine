@@ -880,8 +880,8 @@ if showDashboard and barstate.islast
 // ============================================================================
 // ALERTS
 // ============================================================================
-alertcondition(newBullSignal, "SMC Buy Signal", "BUY Signal | Confluence: " + str.tostring(bullConfluence) + "/6")
-alertcondition(newBearSignal, "SMC Sell Signal", "SELL Signal | Confluence: " + str.tostring(bearConfluence) + "/6")
+alertcondition(newBullSignal, "SMC Buy Signal", "BUY Signal Detected")
+alertcondition(newBearSignal, "SMC Sell Signal", "SELL Signal Detected")
 alertcondition(newBullSignal or newBearSignal, "Any SMC Signal", "SMC Signal Detected")
 alertcondition(sweepBSL, "BSL Sweep", "Buy Side Liquidity Swept")
 alertcondition(sweepSSL, "SSL Sweep", "Sell Side Liquidity Swept")
