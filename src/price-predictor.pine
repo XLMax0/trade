@@ -743,7 +743,7 @@ if showDashboard and barstate.islast
         "Bottom Left"   => ta.lowest(low, 50) - atrVal * 3
         => ta.highest(high, 50) + atrVal * 3
 
-    var table dashboard = table.new(position.top_right, 2, 16, bgcolor=color.new(#1a1a2e, 10), border_color=color.new(#ffffff, 80), border_width=1, frame_color=color.new(#ffffff, 80), frame_width=1)
+    var table dashboard = table.new(position.top_right, 2, 22, bgcolor=color.new(#1a1a2e, 10), border_color=color.new(#ffffff, 80), border_width=1, frame_color=color.new(#ffffff, 80), frame_width=1)
 
     // Helper colors
     headerBg   = color.new(#16213e, 0)
