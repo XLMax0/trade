@@ -127,38 +127,35 @@ var int   lastBearOBBar    = na
 var int   lastBullFVGBar   = na
 var int   lastBearFVGBar   = na
 
-f_detectOBFVG() =>
-    // — Order Blocks —
-    // Bullish OB: last bearish candle before a strong bullish move
-    bullOB = close[1] < open[1] and close > open and (close - open) > atrVal * 1.0
-    if bullOB
-        lastBullOBTop  := open[1]
-        lastBullOBBot  := close[1]
-        lastBullOBBar  := bar_index
+// — Order Blocks (global scope) —
+// Bullish OB: last bearish candle before a strong bullish move
+bullOB = close[1] < open[1] and close > open and (close - open) > atrVal * 1.0
+if bullOB
+    lastBullOBTop  := open[1]
+    lastBullOBBot  := close[1]
+    lastBullOBBar  := bar_index
 
-    // Bearish OB: last bullish candle before a strong bearish move
-    bearOB = close[1] > open[1] and close < open and (open - close) > atrVal * 1.0
-    if bearOB
-        lastBearOBTop  := close[1]
-        lastBearOBBot  := open[1]
-        lastBearOBBar  := bar_index
+// Bearish OB: last bullish candle before a strong bearish move
+bearOB = close[1] > open[1] and close < open and (open - close) > atrVal * 1.0
+if bearOB
+    lastBearOBTop  := close[1]
+    lastBearOBBot  := open[1]
+    lastBearOBBar  := bar_index
 
-    // — Fair Value Gaps —
-    // Bullish FVG: gap between candle [2] high and candle [0] low
-    bullFVG = low > high[2] and close > open
-    if bullFVG
-        lastBullFVGTop := low
-        lastBullFVGBot := high[2]
-        lastBullFVGBar := bar_index
+// — Fair Value Gaps (global scope) —
+// Bullish FVG: gap between candle [2] high and candle [0] low
+bullFVG = low > high[2] and close > open
+if bullFVG
+    lastBullFVGTop := low
+    lastBullFVGBot := high[2]
+    lastBullFVGBar := bar_index
 
-    // Bearish FVG: gap between candle [0] high and candle [2] low
-    bearFVG = high < low[2] and close < open
-    if bearFVG
-        lastBearFVGTop := low[2]
-        lastBearFVGBot := high
-        lastBearFVGBar := bar_index
-
-f_detectOBFVG()
+// Bearish FVG: gap between candle [0] high and candle [2] low
+bearFVG = high < low[2] and close < open
+if bearFVG
+    lastBearFVGTop := low[2]
+    lastBearFVGBot := high
+    lastBearFVGBar := bar_index
 
 f_obfvgScore() =>
     float score = 0.0
