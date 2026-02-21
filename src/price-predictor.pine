@@ -1,544 +1,506 @@
 // This Pine Script™ source code is subject to the terms of the Mozilla Public License 2.0
 // https://mozilla.org/MPL/2.0/
-// © Trade Price Predictor
+// © Smart Money Concepts Forex
 
 //@version=6
-indicator("Multi-Factor Price Predictor [Forex]", overlay=true, max_lines_count=500, max_labels_count=500, max_boxes_count=500)
+indicator("SMC / ICT Forex [Smart Money]", overlay=true, max_lines_count=500, max_labels_count=500, max_boxes_count=500)
 
 // ============================================================================
 // INPUTS
 // ============================================================================
 
 // — General Settings —
-g_general        = "══════ General Settings ══════"
-predBars         = input.int(5, "Prediction Horizon (Bars)", minval=1, maxval=50, group=g_general)
-minConfidence    = input.float(50.0, "Min Confidence to Show Signal (%)", minval=10, maxval=95, step=5, group=g_general)
+g_general         = "══════ General ══════"
+swingLen          = input.int(5, "Swing Detection Length", minval=2, maxval=20, group=g_general)
+maxStructures     = input.int(5, "Max Structure Lines", minval=1, maxval=20, group=g_general)
+atrLen            = input.int(14, "ATR Length", minval=5, maxval=50, group=g_general)
 
-// — Anchored VWAP —
-g_vwap           = "══════ Anchored VWAP ══════"
-useVwap          = input.bool(true, "Enable VWAP Analysis", group=g_vwap)
-vwapWeight       = input.float(15.0, "VWAP Weight (%)", minval=0, maxval=100, step=5, group=g_vwap)
-vwapAnchorLen    = input.int(50, "VWAP Anchor Length", minval=10, maxval=200, group=g_vwap)
+// — Market Structure —
+g_ms              = "══════ Market Structure ══════"
+showBOS           = input.bool(true, "Show Break of Structure (BOS)", group=g_ms)
+showCHoCH         = input.bool(true, "Show Change of Character (CHoCH)", group=g_ms)
+showSwings        = input.bool(true, "Show Swing Points", group=g_ms)
 
-// — Order Block & FVG —
-g_ob             = "══════ Order Block & FVG ══════"
-useOB            = input.bool(true, "Enable Order Block & FVG", group=g_ob)
-obWeight         = input.float(15.0, "OB/FVG Weight (%)", minval=0, maxval=100, step=5, group=g_ob)
-obLookback       = input.int(20, "OB Lookback Length", minval=5, maxval=100, group=g_ob)
+// — Order Blocks —
+g_ob              = "══════ Order Blocks ══════"
+showOB            = input.bool(true, "Show Order Blocks", group=g_ob)
+maxOB             = input.int(3, "Max Order Blocks Shown", minval=1, maxval=10, group=g_ob)
+obMitigationType  = input.string("Wick", "OB Mitigation Type", options=["Wick", "Close"], group=g_ob)
 
-// — Price Action —
-g_pa             = "══════ Price Action ══════"
-usePA            = input.bool(true, "Enable Price Action", group=g_pa)
-paWeight         = input.float(15.0, "Price Action Weight (%)", minval=0, maxval=100, step=5, group=g_pa)
+// — Fair Value Gaps —
+g_fvg             = "══════ Fair Value Gaps ══════"
+showFVG           = input.bool(true, "Show Fair Value Gaps", group=g_fvg)
+maxFVG            = input.int(3, "Max FVGs Shown", minval=1, maxval=10, group=g_fvg)
+fvgFilterATR      = input.float(0.2, "Min FVG Size (ATR mult)", minval=0.05, maxval=1.0, step=0.05, group=g_fvg)
 
-// — Support & Resistance —
-g_sr             = "══════ Support & Resistance ══════"
-useSR            = input.bool(true, "Enable Support & Resistance", group=g_sr)
-srWeight         = input.float(15.0, "S/R Weight (%)", minval=0, maxval=100, step=5, group=g_sr)
-srLookback       = input.int(50, "S/R Lookback Length", minval=10, maxval=200, group=g_sr)
-srZoneATRMult    = input.float(0.3, "S/R Zone Width (ATR mult)", minval=0.1, maxval=1.0, step=0.1, group=g_sr)
+// — Liquidity —
+g_liq             = "══════ Liquidity ══════"
+showLiquidity     = input.bool(true, "Show Liquidity Levels", group=g_liq)
+eqhEqlLen         = input.int(3, "Equal H/L Detection Bars", minval=2, maxval=10, group=g_liq)
+eqhEqlTolerance   = input.float(0.1, "Equal H/L Tolerance (ATR mult)", minval=0.01, maxval=0.5, step=0.01, group=g_liq)
+showSweeps        = input.bool(true, "Show Liquidity Sweeps", group=g_liq)
 
-// — Fibonacci —
-g_fib            = "══════ Fibonacci ══════"
-useFib           = input.bool(true, "Enable Fibonacci", group=g_fib)
-fibWeight        = input.float(10.0, "Fibonacci Weight (%)", minval=0, maxval=100, step=5, group=g_fib)
-fibLookback      = input.int(50, "Fibonacci Lookback", minval=10, maxval=200, group=g_fib)
+// — Kill Zones —
+g_kz              = "══════ Kill Zones (UTC) ══════"
+useKillZones      = input.bool(true, "Enable Kill Zone Filter", group=g_kz)
+showKZBackground  = input.bool(true, "Show Kill Zone Background", group=g_kz)
+kzAsianStart      = input.int(0, "Asian Session Start (UTC hour)", minval=0, maxval=23, group=g_kz)
+kzAsianEnd        = input.int(4, "Asian Session End (UTC hour)", minval=0, maxval=23, group=g_kz)
+kzLondonStart     = input.int(7, "London Session Start (UTC hour)", minval=0, maxval=23, group=g_kz)
+kzLondonEnd       = input.int(10, "London Session End (UTC hour)", minval=0, maxval=23, group=g_kz)
+kzNYStart         = input.int(12, "NY Session Start (UTC hour)", minval=0, maxval=23, group=g_kz)
+kzNYEnd           = input.int(15, "NY Session End (UTC hour)", minval=0, maxval=23, group=g_kz)
 
-// — RSI & Divergence —
-g_rsi            = "══════ RSI & Divergence ══════"
-useRSI           = input.bool(true, "Enable RSI Divergence", group=g_rsi)
-rsiWeight        = input.float(10.0, "RSI Weight (%)", minval=0, maxval=100, step=5, group=g_rsi)
-rsiLen           = input.int(14, "RSI Length", minval=5, maxval=50, group=g_rsi)
+// — Premium/Discount —
+g_pd              = "══════ Premium / Discount ══════"
+showPDZones       = input.bool(true, "Show Premium/Discount Zones", group=g_pd)
+pdLookback        = input.int(50, "Range Lookback", minval=10, maxval=200, group=g_pd)
 
-// — EMA Ribbon —
-g_ema            = "══════ EMA Ribbon ══════"
-useEMA           = input.bool(true, "Enable EMA Ribbon", group=g_ema)
-emaWeight        = input.float(10.0, "EMA Weight (%)", minval=0, maxval=100, step=5, group=g_ema)
-
-// — Volume & ATR —
-g_vol            = "══════ Volume & ATR ══════"
-useVol           = input.bool(true, "Enable Volume Analysis", group=g_vol)
-volWeight        = input.float(5.0, "Volume Weight (%)", minval=0, maxval=100, step=5, group=g_vol)
-atrLen           = input.int(14, "ATR Length", minval=5, maxval=50, group=g_vol)
-
-// — Stochastic RSI —
-g_stoch          = "══════ Stochastic RSI ══════"
-useStoch         = input.bool(true, "Enable Stochastic RSI", group=g_stoch)
-stochWeight      = input.float(5.0, "Stoch RSI Weight (%)", minval=0, maxval=100, step=5, group=g_stoch)
-stochLen         = input.int(14, "Stoch RSI Length", minval=5, maxval=50, group=g_stoch)
-stochSmK         = input.int(3, "Stoch %K Smoothing", minval=1, maxval=10, group=g_stoch)
-stochSmD         = input.int(3, "Stoch %D Smoothing", minval=1, maxval=10, group=g_stoch)
+// — Signal Settings —
+g_sig             = "══════ Signal Settings ══════"
+minConfluence     = input.int(3, "Min Confluence for Signal", minval=1, maxval=6, group=g_sig)
+showSignals       = input.bool(true, "Show Entry Signals", group=g_sig)
+showTargets       = input.bool(true, "Show TP/SL Lines", group=g_sig)
+rrRatio           = input.float(2.0, "Risk:Reward Ratio", minval=1.0, maxval=5.0, step=0.5, group=g_sig)
 
 // — Visual Settings —
-g_visual         = "══════ Visual Settings ══════"
-showDashboard    = input.bool(true, "Show Statistics Dashboard", group=g_visual)
-showSRZones      = input.bool(true, "Show S/R Zones", group=g_visual)
-showOBZones      = input.bool(true, "Show Order Block Zones", group=g_visual)
-showFVGZones     = input.bool(true, "Show FVG Zones", group=g_visual)
-bullColor        = input.color(color.new(#00E676, 0), "Bullish Color", group=g_visual)
-bearColor        = input.color(color.new(#FF5252, 0), "Bearish Color", group=g_visual)
-dashboardPos     = input.string("Top Right", "Dashboard Position", options=["Top Right", "Top Left", "Bottom Right", "Bottom Left"], group=g_visual)
+g_visual          = "══════ Visual ══════"
+showDashboard     = input.bool(true, "Show Dashboard", group=g_visual)
+bullColor         = input.color(color.new(#00E676, 0), "Bullish Color", group=g_visual)
+bearColor         = input.color(color.new(#FF5252, 0), "Bearish Color", group=g_visual)
+fvgBullColor      = input.color(color.new(#2196F3, 0), "FVG Bullish Color", group=g_visual)
+fvgBearColor      = input.color(color.new(#FF9800, 0), "FVG Bearish Color", group=g_visual)
+kzAsianColor      = input.color(color.new(#9C27B0, 92), "Asian KZ Color", group=g_visual)
+kzLondonColor     = input.color(color.new(#2196F3, 92), "London KZ Color", group=g_visual)
+kzNYColor         = input.color(color.new(#FF9800, 92), "NY KZ Color", group=g_visual)
 
 // ============================================================================
 // CORE CALCULATIONS
 // ============================================================================
-
-// — ATR (used across multiple modules) —
-atrVal           = ta.atr(atrLen)
+atrVal = ta.atr(atrLen)
 
 // ============================================================================
-// MODULE 1: ANCHORED VWAP
+// MODULE 1: MARKET STRUCTURE (BOS / CHoCH)
 // ============================================================================
-f_vwapScore() =>
-    float score = 0.0
-    if useVwap
-        // Calculate rolling VWAP using anchor length
-        vwapSum      = math.sum(close * volume, vwapAnchorLen)
-        volSum       = math.sum(volume, vwapAnchorLen)
-        anchoredVwap = volSum != 0 ? vwapSum / volSum : close
 
-        // Price position relative to VWAP
-        vwapDist     = (close - anchoredVwap) / atrVal
-        vwapSlope    = anchoredVwap - anchoredVwap[3]
+// — Swing High/Low Detection —
+swingHigh = ta.pivothigh(high, swingLen, swingLen)
+swingLow  = ta.pivotlow(low, swingLen, swingLen)
 
-        // Bullish: price above VWAP and VWAP rising
-        if close > anchoredVwap and vwapSlope > 0
-            score := math.min(vwapDist * 25, 100)
-        else if close < anchoredVwap and vwapSlope < 0
-            score := math.max(vwapDist * 25, -100)
-        else
-            // Mixed signal — less conviction
-            score := vwapDist * 10
-    score
+// Track structure
+var float lastSwingHigh     = na
+var float lastSwingLow      = na
+var int   lastSwingHighBar  = na
+var int   lastSwingLowBar   = na
+var float prevSwingHigh     = na
+var float prevSwingLow      = na
+var int   trendDir          = 0   // 1 = bullish, -1 = bearish, 0 = undefined
 
-// ============================================================================
-// MODULE 2: ORDER BLOCK & FVG DETECTION
-// ============================================================================
-var float lastBullOBTop    = na
-var float lastBullOBBot    = na
-var float lastBearOBTop    = na
-var float lastBearOBBot    = na
-var float lastBullFVGTop   = na
-var float lastBullFVGBot   = na
-var float lastBearFVGTop   = na
-var float lastBearFVGBot   = na
-var int   lastBullOBBar    = na
-var int   lastBearOBBar    = na
-var int   lastBullFVGBar   = na
-var int   lastBearFVGBar   = na
+// Structure break tracking
+var bool  bosUp             = false
+var bool  bosDn             = false
+var bool  chochUp           = false
+var bool  chochDn           = false
 
-// — Order Blocks (global scope) —
-// Bullish OB: last bearish candle before a strong bullish move
-bullOB = close[1] < open[1] and close > open and (close - open) > atrVal * 1.0
-if bullOB
-    lastBullOBTop  := open[1]
-    lastBullOBBot  := close[1]
-    lastBullOBBar  := bar_index
+// Store swing points
+if not na(swingHigh)
+    prevSwingHigh    := lastSwingHigh
+    lastSwingHigh    := swingHigh
+    lastSwingHighBar := bar_index - swingLen
 
-// Bearish OB: last bullish candle before a strong bearish move
-bearOB = close[1] > open[1] and close < open and (open - close) > atrVal * 1.0
-if bearOB
-    lastBearOBTop  := close[1]
-    lastBearOBBot  := open[1]
-    lastBearOBBar  := bar_index
+if not na(swingLow)
+    prevSwingLow    := lastSwingLow
+    lastSwingLow    := swingLow
+    lastSwingLowBar := bar_index - swingLen
 
-// — Fair Value Gaps (global scope) —
-// Bullish FVG: gap between candle [2] high and candle [0] low
-bullFVG = low > high[2] and close > open
-if bullFVG
-    lastBullFVGTop := low
-    lastBullFVGBot := high[2]
-    lastBullFVGBar := bar_index
+// Reset per bar
+bosUp  := false
+bosDn  := false
+chochUp := false
+chochDn := false
 
-// Bearish FVG: gap between candle [0] high and candle [2] low
-bearFVG = high < low[2] and close < open
-if bearFVG
-    lastBearFVGTop := low[2]
-    lastBearFVGBot := high
-    lastBearFVGBar := bar_index
+// BOS & CHoCH Detection
+// Bullish BOS: price breaks above the last swing high in an uptrend
+// Bearish BOS: price breaks below the last swing low in a downtrend
+// CHoCH: structure break AGAINST current trend direction
 
-f_obfvgScore() =>
-    float score = 0.0
-    if useOB
-        freshness = obLookback
-        // Bullish OB proximity
-        if not na(lastBullOBTop) and (bar_index - lastBullOBBar) < freshness
-            if close >= lastBullOBBot and close <= lastBullOBTop
-                score += 60  // Price is in bullish OB zone
-            else if close > lastBullOBTop and close < lastBullOBTop + atrVal
-                score += 30  // Price just above bullish OB
-        // Bearish OB proximity
-        if not na(lastBearOBTop) and (bar_index - lastBearOBBar) < freshness
-            if close >= lastBearOBBot and close <= lastBearOBTop
-                score -= 60
-            else if close < lastBearOBBot and close > lastBearOBBot - atrVal
-                score -= 30
+if not na(lastSwingHigh) and close > lastSwingHigh and close[1] <= lastSwingHigh
+    if trendDir == 1 or trendDir == 0
+        bosUp   := true
+    else
+        chochUp := true
+    trendDir := 1
 
-        // FVG scoring — unfilled gaps act as magnets
-        if not na(lastBullFVGTop) and (bar_index - lastBullFVGBar) < freshness
-            if close <= lastBullFVGTop and close >= lastBullFVGBot
-                score += 40  // Price filling bullish FVG
-            else if close < lastBullFVGBot
-                score += 20  // Bullish FVG above — magnet effect
-        if not na(lastBearFVGTop) and (bar_index - lastBearFVGBar) < freshness
-            if close >= lastBearFVGBot and close <= lastBearFVGTop
-                score -= 40
-            else if close > lastBearFVGTop
-                score -= 20
+if not na(lastSwingLow) and close < lastSwingLow and close[1] >= lastSwingLow
+    if trendDir == -1 or trendDir == 0
+        bosDn   := true
+    else
+        chochDn := true
+    trendDir := -1
 
-        score := math.max(-100, math.min(100, score))
-    score
+// — Swing point labels —
+if showSwings and not na(swingHigh)
+    label.new(bar_index - swingLen, swingHigh, "HH", style=label.style_label_down, color=color.new(bearColor, 80), textcolor=bearColor, size=size.tiny)
+
+if showSwings and not na(swingLow)
+    label.new(bar_index - swingLen, swingLow, "LL", style=label.style_label_up, color=color.new(bullColor, 80), textcolor=bullColor, size=size.tiny)
+
+// — BOS / CHoCH labels —
+if showBOS and bosUp
+    label.new(bar_index, high, "BOS ▲", style=label.style_label_down, color=color.new(bullColor, 70), textcolor=bullColor, size=size.tiny)
+
+if showBOS and bosDn
+    label.new(bar_index, low, "BOS ▼", style=label.style_label_up, color=color.new(bearColor, 70), textcolor=bearColor, size=size.tiny)
+
+if showCHoCH and chochUp
+    label.new(bar_index, high, "CHoCH ▲", style=label.style_label_down, color=color.new(#FFD700, 70), textcolor=color.new(#FFD700, 0), size=size.small)
+
+if showCHoCH and chochDn
+    label.new(bar_index, low, "CHoCH ▼", style=label.style_label_up, color=color.new(#FFD700, 70), textcolor=color.new(#FFD700, 0), size=size.small)
 
 // ============================================================================
-// MODULE 3: PRICE ACTION
+// MODULE 2: ORDER BLOCKS (Institutional)
 // ============================================================================
-f_paScore() =>
-    float score = 0.0
-    if usePA
-        bodySize     = math.abs(close - open)
-        upperWick    = high - math.max(close, open)
-        lowerWick    = math.min(close, open) - low
-        totalRange   = high - low
-        bodyRatio    = totalRange != 0 ? bodySize / totalRange : 0
 
-        // — Engulfing —
-        bullEngulf   = close[1] < open[1] and close > open and close > open[1] and open < close[1]
-        bearEngulf   = close[1] > open[1] and close < open and close < open[1] and open > close[1]
-        if bullEngulf
-            score += 50
-        if bearEngulf
-            score -= 50
+// OB Arrays: [top, bottom, bar_index, direction(1=bull/-1=bear), mitigated(0/1)]
+var array<float> obTops      = array.new_float(0)
+var array<float> obBots      = array.new_float(0)
+var array<int>   obBars      = array.new_int(0)
+var array<int>   obDirs      = array.new_int(0)
+var array<int>   obMitigated = array.new_int(0)
 
-        // — Pin Bar / Hammer —
-        isHammer     = lowerWick > bodySize * 2 and upperWick < bodySize * 0.5 and bodyRatio < 0.4
-        isShooter    = upperWick > bodySize * 2 and lowerWick < bodySize * 0.5 and bodyRatio < 0.4
-        if isHammer
-            score += 40
-        if isShooter
-            score -= 40
+// Detect Order Blocks on structure breaks
+// Bullish OB: last bearish candle before a bullish BOS/CHoCH
+if (bosUp or chochUp) and showOB
+    // Find the last bearish candle in the move
+    for i = 1 to 10
+        if close[i] < open[i]
+            array.push(obTops, math.max(open[i], close[i]))
+            array.push(obBots, math.min(open[i], close[i]))
+            array.push(obBars, bar_index - i)
+            array.push(obDirs, 1)
+            array.push(obMitigated, 0)
+            break
 
-        // — Doji (indecision) —
-        isDoji       = bodyRatio < 0.1 and totalRange > atrVal * 0.5
-        if isDoji
-            score *= 0.5  // Reduce conviction on doji
+// Bearish OB: last bullish candle before a bearish BOS/CHoCH
+if (bosDn or chochDn) and showOB
+    for i = 1 to 10
+        if close[i] > open[i]
+            array.push(obTops, math.max(open[i], close[i]))
+            array.push(obBots, math.min(open[i], close[i]))
+            array.push(obBars, bar_index - i)
+            array.push(obDirs, -1)
+            array.push(obMitigated, 0)
+            break
 
-        // — Three consecutive candles (momentum) —
-        threeUp      = close > close[1] and close[1] > close[2] and close[2] > close[3]
-        threeDn      = close < close[1] and close[1] < close[2] and close[2] < close[3]
-        if threeUp
-            score += 30
-        if threeDn
-            score -= 30
+// Check OB mitigation
+if array.size(obTops) > 0
+    for i = array.size(obTops) - 1 to 0
+        if array.get(obMitigated, i) == 0
+            obTop = array.get(obTops, i)
+            obBot = array.get(obBots, i)
+            dir   = array.get(obDirs, i)
+            if dir == 1  // Bullish OB — mitigated when price closes/wicks below
+                mitigated = obMitigationType == "Close" ? close < obBot : low < obBot
+                if mitigated
+                    array.set(obMitigated, i, 1)
+            else  // Bearish OB — mitigated when price closes/wicks above
+                mitigated = obMitigationType == "Close" ? close > obTop : high > obTop
+                if mitigated
+                    array.set(obMitigated, i, 1)
 
-        // — Morning/Evening Star patterns —
-        morningStar  = close[2] < open[2] and math.abs(close[1] - open[1]) < atrVal * 0.3 and close > open and close > (open[2] + close[2]) / 2
-        eveningStar  = close[2] > open[2] and math.abs(close[1] - open[1]) < atrVal * 0.3 and close < open and close < (open[2] + close[2]) / 2
-        if morningStar
-            score += 45
-        if eveningStar
-            score -= 45
-
-        score := math.max(-100, math.min(100, score))
-    score
-
-// ============================================================================
-// MODULE 4: SUPPORT & RESISTANCE
-// ============================================================================
-f_srScore() =>
-    float score = 0.0
-    if useSR
-        pivotHigh    = ta.pivothigh(high, srLookback / 2, srLookback / 2)
-        pivotLow     = ta.pivotlow(low, srLookback / 2, srLookback / 2)
-
-        // Find nearest support and resistance
-        var float nearestRes = na
-        var float nearestSup = na
-
-        if not na(pivotHigh)
-            nearestRes := pivotHigh
-        if not na(pivotLow)
-            nearestSup := pivotLow
-
-        zoneWidth = atrVal * srZoneATRMult
-
-        // Proximity scoring
-        if not na(nearestRes)
-            distToRes = nearestRes - close
-            if distToRes > 0 and distToRes < zoneWidth * 2
-                score -= 40  // Near resistance — bearish pressure
-            else if distToRes < 0 and math.abs(distToRes) < zoneWidth
-                score += 30  // Just broke resistance — bullish
-
-        if not na(nearestSup)
-            distToSup = close - nearestSup
-            if distToSup > 0 and distToSup < zoneWidth * 2
-                score += 40  // Near support — bullish bounce
-            else if distToSup < 0 and math.abs(distToSup) < zoneWidth
-                score -= 30  // Just broke support — bearish
-
-        // Price position between S/R
-        if not na(nearestRes) and not na(nearestSup) and nearestRes > nearestSup
-            srRange    = nearestRes - nearestSup
-            position   = srRange != 0 ? (close - nearestSup) / srRange : 0.5
-            // Near top of range = bearish bias, near bottom = bullish
-            score     += (0.5 - position) * 40
-
-        score := math.max(-100, math.min(100, score))
-    score
-
-// ============================================================================
-// MODULE 5: FIBONACCI
-// ============================================================================
-f_fibScore() =>
-    float score = 0.0
-    if useFib
-        highestH = ta.highest(high, fibLookback)
-        lowestL  = ta.lowest(low, fibLookback)
-        fibRange = highestH - lowestL
-
-        if fibRange > 0
-            // Determine trend direction for fib
-            highBar  = ta.highestbars(high, fibLookback)
-            lowBar   = ta.lowestbars(low, fibLookback)
-            uptrend  = lowBar < highBar  // Low came first = uptrend
-
-            float fib236 = na
-            float fib382 = na
-            float fib500 = na
-            float fib618 = na
-            float fib786 = na
-
-            if uptrend
-                fib236 := highestH - fibRange * 0.236
-                fib382 := highestH - fibRange * 0.382
-                fib500 := highestH - fibRange * 0.500
-                fib618 := highestH - fibRange * 0.618
-                fib786 := highestH - fibRange * 0.786
+// Count active (unmitigated) OBs
+int activeBullOB = 0
+int activeBearOB = 0
+if array.size(obTops) > 0
+    for i = 0 to array.size(obTops) - 1
+        if array.get(obMitigated, i) == 0
+            if array.get(obDirs, i) == 1
+                activeBullOB += 1
             else
-                fib236 := lowestL + fibRange * 0.236
-                fib382 := lowestL + fibRange * 0.382
-                fib500 := lowestL + fibRange * 0.500
-                fib618 := lowestL + fibRange * 0.618
-                fib786 := lowestL + fibRange * 0.786
+                activeBearOB += 1
 
-            // Check proximity to fib levels
-            tolerance = atrVal * 0.3
-            nearFib   = false
-            fibLevel  = ""
+// Trim old OBs (keep only recent ones)
+while array.size(obTops) > maxOB * 4
+    array.shift(obTops)
+    array.shift(obBots)
+    array.shift(obBars)
+    array.shift(obDirs)
+    array.shift(obMitigated)
 
-            if math.abs(close - fib236) < tolerance
-                nearFib  := true
-                fibLevel := "23.6%"
-            if math.abs(close - fib382) < tolerance
-                nearFib  := true
-                fibLevel := "38.2%"
-            if math.abs(close - fib500) < tolerance
-                nearFib  := true
-                fibLevel := "50%"
-            if math.abs(close - fib618) < tolerance
-                nearFib  := true
-                fibLevel := "61.8%"
-            if math.abs(close - fib786) < tolerance
-                nearFib  := true
-                fibLevel := "78.6%"
+// ============================================================================
+// MODULE 3: FAIR VALUE GAPS
+// ============================================================================
 
-            if nearFib
-                if uptrend
-                    // At fib retracement in uptrend = potential bounce (bullish)
-                    score += 50
-                else
-                    // At fib retracement in downtrend = potential bounce (bearish)
-                    score -= 50
+var array<float> fvgTops      = array.new_float(0)
+var array<float> fvgBots      = array.new_float(0)
+var array<int>   fvgBars      = array.new_int(0)
+var array<int>   fvgDirs      = array.new_int(0)
+var array<int>   fvgFilled    = array.new_int(0)
+
+// Bullish FVG: gap between candle[2] high and candle[0] low (gap up)
+bullFVGCond = low > high[2] and close[1] > open[1] and (low - high[2]) > atrVal * fvgFilterATR
+if bullFVGCond and showFVG
+    array.push(fvgTops, low)
+    array.push(fvgBots, high[2])
+    array.push(fvgBars, bar_index - 1)
+    array.push(fvgDirs, 1)
+    array.push(fvgFilled, 0)
+
+// Bearish FVG: gap between candle[0] high and candle[2] low (gap down)
+bearFVGCond = high < low[2] and close[1] < open[1] and (low[2] - high) > atrVal * fvgFilterATR
+if bearFVGCond and showFVG
+    array.push(fvgTops, low[2])
+    array.push(fvgBots, high)
+    array.push(fvgBars, bar_index - 1)
+    array.push(fvgDirs, -1)
+    array.push(fvgFilled, 0)
+
+// Check FVG fill
+if array.size(fvgTops) > 0
+    for i = array.size(fvgTops) - 1 to 0
+        if array.get(fvgFilled, i) == 0
+            fTop = array.get(fvgTops, i)
+            fBot = array.get(fvgBots, i)
+            dir  = array.get(fvgDirs, i)
+            if dir == 1 and low <= fBot
+                array.set(fvgFilled, i, 1)
+            if dir == -1 and high >= fTop
+                array.set(fvgFilled, i, 1)
+
+// Count active FVGs
+int activeBullFVG = 0
+int activeBearFVG = 0
+if array.size(fvgTops) > 0
+    for i = 0 to array.size(fvgTops) - 1
+        if array.get(fvgFilled, i) == 0
+            if array.get(fvgDirs, i) == 1
+                activeBullFVG += 1
             else
-                // Not near any fib level — neutral with slight trend bias
-                if uptrend
-                    score += 10
-                else
-                    score -= 10
+                activeBearFVG += 1
 
-        score := math.max(-100, math.min(100, score))
-    score
-
-// ============================================================================
-// MODULE 6: RSI DIVERGENCE
-// ============================================================================
-f_rsiScore() =>
-    float score = 0.0
-    if useRSI
-        rsiVal       = ta.rsi(close, rsiLen)
-
-        // RSI level scoring
-        if rsiVal > 70
-            score -= 30  // Overbought
-        else if rsiVal < 30
-            score += 30  // Oversold
-        else if rsiVal > 50
-            score += (rsiVal - 50) * 0.5
-        else
-            score -= (50 - rsiVal) * 0.5
-
-        // Divergence detection (5-bar lookback)
-        priceMakesHigherHigh = high > ta.highest(high, 10)[1]
-        rsiMakesLowerHigh    = rsiVal < ta.highest(rsiVal, 10)[1]
-        priceMakesLowerLow   = low < ta.lowest(low, 10)[1]
-        rsiMakesHigherLow    = rsiVal > ta.lowest(rsiVal, 10)[1]
-
-        // Bearish divergence
-        if priceMakesHigherHigh and rsiMakesLowerHigh
-            score -= 40
-
-        // Bullish divergence
-        if priceMakesLowerLow and rsiMakesHigherLow
-            score += 40
-
-        score := math.max(-100, math.min(100, score))
-    score
+// Trim old FVGs
+while array.size(fvgTops) > maxFVG * 4
+    array.shift(fvgTops)
+    array.shift(fvgBots)
+    array.shift(fvgBars)
+    array.shift(fvgDirs)
+    array.shift(fvgFilled)
 
 // ============================================================================
-// MODULE 7: EMA RIBBON
-// ============================================================================
-f_emaScore() =>
-    float score = 0.0
-    if useEMA
-        ema21  = ta.ema(close, 21)
-        ema50  = ta.ema(close, 50)
-        ema200 = ta.ema(close, 200)
-
-        // Trend alignment
-        if ema21 > ema50 and ema50 > ema200
-            score += 60  // Perfect bullish alignment
-        else if ema21 < ema50 and ema50 < ema200
-            score -= 60  // Perfect bearish alignment
-        else if ema21 > ema50
-            score += 25  // Short-term bullish
-        else if ema21 < ema50
-            score -= 25  // Short-term bearish
-
-        // Price position relative to EMAs
-        if close > ema21 and close > ema50 and close > ema200
-            score += 30
-        else if close < ema21 and close < ema50 and close < ema200
-            score -= 30
-
-        // EMA slope (momentum)
-        ema21Slope = ema21 - ema21[3]
-        if ema21Slope > 0
-            score += 10
-        else
-            score -= 10
-
-        score := math.max(-100, math.min(100, score))
-    score
-
-// ============================================================================
-// MODULE 8: VOLUME ANALYSIS
-// ============================================================================
-f_volScore() =>
-    float score = 0.0
-    if useVol
-        avgVol       = ta.sma(volume, 20)
-        volRatio     = avgVol != 0 ? volume / avgVol : 1.0
-        isHighVol    = volRatio > 1.5
-
-        // High volume confirms direction
-        if isHighVol
-            if close > open
-                score += 50  // High volume bullish
-            else
-                score -= 50  // High volume bearish
-        else if volRatio < 0.5
-            // Low volume — less conviction
-            score *= 0.3
-
-        // Volume trend
-        volSma5  = ta.sma(volume, 5)
-        volSma20 = ta.sma(volume, 20)
-        if volSma5 > volSma20
-            if close > close[5]
-                score += 20  // Rising volume in uptrend
-            else
-                score -= 20
-        score := math.max(-100, math.min(100, score))
-    score
-
-// ============================================================================
-// MODULE 9: STOCHASTIC RSI
-// ============================================================================
-f_stochScore() =>
-    float score = 0.0
-    if useStoch
-        rsiVal   = ta.rsi(close, stochLen)
-        stochRsi = ta.stoch(rsiVal, rsiVal, rsiVal, stochLen)
-        k        = ta.sma(stochRsi, stochSmK)
-        d        = ta.sma(k, stochSmD)
-
-        // Overbought/Oversold
-        if k < 20 and d < 20
-            score += 40  // Oversold
-            if k > d
-                score += 20  // Bullish crossover in oversold
-        else if k > 80 and d > 80
-            score -= 40  // Overbought
-            if k < d
-                score -= 20  // Bearish crossover in overbought
-
-        // Crossovers in neutral zone
-        if k > d and k[1] <= d[1] and k > 20 and k < 80
-            score += 25
-        if k < d and k[1] >= d[1] and k > 20 and k < 80
-            score -= 25
-
-        score := math.max(-100, math.min(100, score))
-    score
-
-// ============================================================================
-// PREDICTION ENGINE
+// MODULE 4: LIQUIDITY (Equal Highs/Lows & Sweeps)
 // ============================================================================
 
-// Calculate individual scores
-vwapScore  = f_vwapScore()
-obScore    = f_obfvgScore()
-paScore    = f_paScore()
-srScore    = f_srScore()
-fibScore   = f_fibScore()
-rsiScore   = f_rsiScore()
-emaScore   = f_emaScore()
-volScore   = f_volScore()
-stochScore = f_stochScore()
+// Detect Equal Highs (EQH) — potential buy-side liquidity
+var float lastEQH       = na
+var int   lastEQHBar    = na
+var bool  eqhSwept      = false
+var float lastEQL       = na
+var int   lastEQLBar    = na
+var bool  eqlSwept      = false
 
-// Calculate total weight (only from enabled modules)
-totalWeight = (useVwap ? vwapWeight : 0) + (useOB ? obWeight : 0) + (usePA ? paWeight : 0) + (useSR ? srWeight : 0) + (useFib ? fibWeight : 0) + (useRSI ? rsiWeight : 0) + (useEMA ? emaWeight : 0) + (useVol ? volWeight : 0) + (useStoch ? stochWeight : 0)
+// Equal highs: multiple swing highs at similar level
+if not na(swingHigh) and not na(prevSwingHigh)
+    if math.abs(swingHigh - prevSwingHigh) < atrVal * eqhEqlTolerance
+        lastEQH    := math.max(swingHigh, prevSwingHigh)
+        lastEQHBar := bar_index - swingLen
+        eqhSwept   := false
 
-// Weighted composite score
-compositeScore = totalWeight > 0 ? ((vwapScore * (useVwap ? vwapWeight : 0)) + (obScore * (useOB ? obWeight : 0)) + (paScore * (usePA ? paWeight : 0)) + (srScore * (useSR ? srWeight : 0)) + (fibScore * (useFib ? fibWeight : 0)) + (rsiScore * (useRSI ? rsiWeight : 0)) + (emaScore * (useEMA ? emaWeight : 0)) + (volScore * (useVol ? volWeight : 0)) + (stochScore * (useStoch ? stochWeight : 0))) / totalWeight : 0
+// Equal lows: multiple swing lows at similar level
+if not na(swingLow) and not na(prevSwingLow)
+    if math.abs(swingLow - prevSwingLow) < atrVal * eqhEqlTolerance
+        lastEQL    := math.min(swingLow, prevSwingLow)
+        lastEQLBar := bar_index - swingLen
+        eqlSwept   := false
 
-// Direction and confidence
-isBullish  = compositeScore > 0
-isBearish  = compositeScore < 0
+// Detect sweeps
+var bool sweepBSL = false  // Buy Side Liquidity swept
+var bool sweepSSL = false  // Sell Side Liquidity swept
+sweepBSL := false
+sweepSSL := false
 
-// Confidence: number of modules agreeing with the direction
-agreeBull  = (vwapScore > 0 and useVwap ? 1 : 0) + (obScore > 0 and useOB ? 1 : 0) + (paScore > 0 and usePA ? 1 : 0) + (srScore > 0 and useSR ? 1 : 0) + (fibScore > 0 and useFib ? 1 : 0) + (rsiScore > 0 and useRSI ? 1 : 0) + (emaScore > 0 and useEMA ? 1 : 0) + (volScore > 0 and useVol ? 1 : 0) + (stochScore > 0 and useStoch ? 1 : 0)
-agreeBear  = (vwapScore < 0 and useVwap ? 1 : 0) + (obScore < 0 and useOB ? 1 : 0) + (paScore < 0 and usePA ? 1 : 0) + (srScore < 0 and useSR ? 1 : 0) + (fibScore < 0 and useFib ? 1 : 0) + (rsiScore < 0 and useRSI ? 1 : 0) + (emaScore < 0 and useEMA ? 1 : 0) + (volScore < 0 and useVol ? 1 : 0) + (stochScore < 0 and useStoch ? 1 : 0)
-enabledCount = (useVwap ? 1 : 0) + (useOB ? 1 : 0) + (usePA ? 1 : 0) + (useSR ? 1 : 0) + (useFib ? 1 : 0) + (useRSI ? 1 : 0) + (useEMA ? 1 : 0) + (useVol ? 1 : 0) + (useStoch ? 1 : 0)
+if not na(lastEQH) and not eqhSwept
+    if high > lastEQH and close < lastEQH
+        sweepBSL := true
+        eqhSwept := true
 
-// Agreement ratio as confidence factor
-agreeRatio    = enabledCount > 0 ? math.max(agreeBull, agreeBear) / enabledCount : 0
-scoreStrength = math.min(math.abs(compositeScore) / 60, 1.0)  // Normalize score strength
+if not na(lastEQL) and not eqlSwept
+    if low < lastEQL and close > lastEQL
+        sweepSSL := true
+        eqlSwept := true
 
-// Final confidence: blend of agreement ratio and score strength
-confidence    = math.round((agreeRatio * 60 + scoreStrength * 40), 1)
+// Sweep labels
+if showSweeps and sweepBSL
+    label.new(bar_index, high, "BSL Sweep ✗", style=label.style_label_down, color=color.new(bearColor, 60), textcolor=bearColor, size=size.small)
 
-// Prediction target price
-predictionATR = atrVal * predBars * 0.5  // Expected move based on ATR
-targetPrice   = isBullish ? close + predictionATR * (confidence / 100) : close - predictionATR * (confidence / 100)
+if showSweeps and sweepSSL
+    label.new(bar_index, low, "SSL Sweep ✗", style=label.style_label_up, color=color.new(bullColor, 60), textcolor=bullColor, size=size.small)
 
-// Signal conditions
-showSignal    = confidence >= minConfidence and enabledCount >= 3
-newSignal     = showSignal and (not showSignal[1] or (isBullish != isBullish[1]))
+// ============================================================================
+// MODULE 5: KILL ZONES (Session Timing)
+// ============================================================================
+
+// Get UTC hour
+utcHour = hour(time, "UTC")
+
+// Kill zone detection
+inAsianKZ  = utcHour >= kzAsianStart and utcHour < kzAsianEnd
+inLondonKZ = utcHour >= kzLondonStart and utcHour < kzLondonEnd
+inNYKZ     = utcHour >= kzNYStart and utcHour < kzNYEnd
+inActiveKZ = inLondonKZ or inNYKZ  // Only London & NY are active kill zones for entries
+inAnyKZ    = inAsianKZ or inLondonKZ or inNYKZ
+
+// Kill zone background
+bgcolor(showKZBackground and inAsianKZ ? kzAsianColor : na, title="Asian KZ")
+bgcolor(showKZBackground and inLondonKZ ? kzLondonColor : na, title="London KZ")
+bgcolor(showKZBackground and inNYKZ ? kzNYColor : na, title="NY KZ")
+
+// ============================================================================
+// MODULE 6: PREMIUM / DISCOUNT ZONES
+// ============================================================================
+
+rangeHigh    = ta.highest(high, pdLookback)
+rangeLow     = ta.lowest(low, pdLookback)
+rangeSize    = rangeHigh - rangeLow
+equilibrium  = rangeLow + rangeSize * 0.5
+
+inPremium    = close > equilibrium
+inDiscount   = close < equilibrium
+
+// OTE zone (61.8% - 78.6% retracement)
+// For bullish setup: OTE is in discount (61.8-78.6 from high)
+oteBullTop   = rangeHigh - rangeSize * 0.618
+oteBullBot   = rangeHigh - rangeSize * 0.786
+// For bearish setup: OTE is in premium (61.8-78.6 from low)
+oteBearTop   = rangeLow + rangeSize * 0.786
+oteBearBot   = rangeLow + rangeSize * 0.618
+
+inBullOTE    = close >= oteBullBot and close <= oteBullTop
+inBearOTE    = close >= oteBearBot and close <= oteBearTop
+
+// ============================================================================
+// MODULE 7: CONFLUENCE-BASED SIGNAL ENGINE
+// ============================================================================
+
+// — Confluence factors for BULLISH setup —
+int bullConfluence = 0
+
+// 1. Bullish market structure (trend is up or CHoCH up)
+bullStructure = trendDir == 1 or chochUp
+if bullStructure
+    bullConfluence += 1
+
+// 2. Price at/near unmitigated bullish OB
+bool atBullOB = false
+if array.size(obTops) > 0
+    for i = array.size(obTops) - 1 to math.max(0, array.size(obTops) - maxOB)
+        if array.get(obMitigated, i) == 0 and array.get(obDirs, i) == 1
+            if close <= array.get(obTops, i) and close >= array.get(obBots, i) - atrVal * 0.2
+                atBullOB := true
+                break
+if atBullOB
+    bullConfluence += 1
+
+// 3. Unfilled bullish FVG nearby
+bool nearBullFVG = false
+if array.size(fvgTops) > 0
+    for i = array.size(fvgTops) - 1 to math.max(0, array.size(fvgTops) - maxFVG)
+        if array.get(fvgFilled, i) == 0 and array.get(fvgDirs, i) == 1
+            fTop = array.get(fvgTops, i)
+            fBot = array.get(fvgBots, i)
+            if close <= fTop and close >= fBot - atrVal * 0.3
+                nearBullFVG := true
+                break
+if nearBullFVG
+    bullConfluence += 1
+
+// 4. In discount zone / OTE
+if inDiscount or inBullOTE
+    bullConfluence += 1
+
+// 5. SSL sweep (liquidity taken below, reversal expected)
+if sweepSSL
+    bullConfluence += 1
+
+// 6. In active kill zone
+if inActiveKZ or not useKillZones
+    bullConfluence += 1
+
+// — Confluence factors for BEARISH setup —
+int bearConfluence = 0
+
+// 1. Bearish market structure
+bearStructure = trendDir == -1 or chochDn
+if bearStructure
+    bearConfluence += 1
+
+// 2. Price at/near unmitigated bearish OB
+bool atBearOB = false
+if array.size(obTops) > 0
+    for i = array.size(obTops) - 1 to math.max(0, array.size(obTops) - maxOB)
+        if array.get(obMitigated, i) == 0 and array.get(obDirs, i) == -1
+            if close >= array.get(obBots, i) and close <= array.get(obTops, i) + atrVal * 0.2
+                atBearOB := true
+                break
+if atBearOB
+    bearConfluence += 1
+
+// 3. Unfilled bearish FVG nearby
+bool nearBearFVG = false
+if array.size(fvgTops) > 0
+    for i = array.size(fvgTops) - 1 to math.max(0, array.size(fvgTops) - maxFVG)
+        if array.get(fvgFilled, i) == 0 and array.get(fvgDirs, i) == -1
+            fTop = array.get(fvgTops, i)
+            fBot = array.get(fvgBots, i)
+            if close >= fBot and close <= fTop + atrVal * 0.3
+                nearBearFVG := true
+                break
+if nearBearFVG
+    bearConfluence += 1
+
+// 4. In premium zone / OTE
+if inPremium or inBearOTE
+    bearConfluence += 1
+
+// 5. BSL sweep (liquidity taken above, reversal expected)
+if sweepBSL
+    bearConfluence += 1
+
+// 6. In active kill zone
+if inActiveKZ or not useKillZones
+    bearConfluence += 1
+
+// — Signal Generation —
+bullSignal = bullConfluence >= minConfluence and showSignals
+bearSignal = bearConfluence >= minConfluence and showSignals
+
+// Prevent consecutive same-direction signals (cooldown)
+var int lastSignalDir = 0
+var int lastSignalBar = 0
+signalCooldown = 5  // minimum bars between signals
+
+newBullSignal = bullSignal and (lastSignalDir != 1 or (bar_index - lastSignalBar) > signalCooldown)
+newBearSignal = bearSignal and (lastSignalDir != -1 or (bar_index - lastSignalBar) > signalCooldown)
+
+// If both fire, pick stronger confluence
+if newBullSignal and newBearSignal
+    if bullConfluence >= bearConfluence
+        newBearSignal := false
+    else
+        newBullSignal := false
+
+if newBullSignal
+    lastSignalDir := 1
+    lastSignalBar := bar_index
+
+if newBearSignal
+    lastSignalDir := -1
+    lastSignalBar := bar_index
 
 // ============================================================================
 // STATISTICS TRACKING
 // ============================================================================
+
 var int   totalSignals     = 0
 var int   bullSignals      = 0
 var int   bearSignals      = 0
@@ -546,294 +508,387 @@ var int   correctSignals   = 0
 var int   incorrectSignals = 0
 var int   pendingSignals   = 0
 var float totalPnLPips     = 0.0
-var float avgConfidence    = 0.0
-var float sumConfidence    = 0.0
 
-// Arrays to track predictions for validation
-var array<float> predPrices      = array.new_float(0)
-var array<int>   predBarsArr     = array.new_int(0)
-var array<bool>  predDirections  = array.new_bool(0)   // true=bull, false=bear
+// Prediction tracking arrays
 var array<float> predEntries     = array.new_float(0)
-var array<float> predConfidences = array.new_float(0)
+var array<int>   predExitBars    = array.new_int(0)
+var array<int>   predDirs        = array.new_int(0)  // 1=bull, -1=bear
+var array<float> predSLs         = array.new_float(0)
+var array<float> predTPs         = array.new_float(0)
 
-// Record new signals
-if newSignal
+// SL/TP calculation
+bullSL = na(lastSwingLow) ? close - atrVal * 1.5 : lastSwingLow - atrVal * 0.2
+bearSL = na(lastSwingHigh) ? close + atrVal * 1.5 : lastSwingHigh + atrVal * 0.2
+bullRisk = close - bullSL
+bearRisk = bearSL - close
+bullTP = close + bullRisk * rrRatio
+bearTP = close - bearRisk * rrRatio
+
+// Record signals
+if newBullSignal
     totalSignals  += 1
+    bullSignals   += 1
     pendingSignals += 1
-    sumConfidence += confidence
-    avgConfidence := totalSignals > 0 ? sumConfidence / totalSignals : 0
-
-    if isBullish
-        bullSignals += 1
-    else
-        bearSignals += 1
-
-    array.push(predPrices, targetPrice)
-    array.push(predBarsArr, bar_index + predBars)
-    array.push(predDirections, isBullish)
     array.push(predEntries, close)
-    array.push(predConfidences, confidence)
+    array.push(predExitBars, bar_index + 20)
+    array.push(predDirs, 1)
+    array.push(predSLs, bullSL)
+    array.push(predTPs, bullTP)
 
-// Validate past predictions
-if array.size(predBarsArr) > 0
+if newBearSignal
+    totalSignals  += 1
+    bearSignals   += 1
+    pendingSignals += 1
+    array.push(predEntries, close)
+    array.push(predExitBars, bar_index + 20)
+    array.push(predDirs, -1)
+    array.push(predSLs, bearSL)
+    array.push(predTPs, bearTP)
+
+// Validate predictions (TP/SL hit or time expiry)
+if array.size(predEntries) > 0
     int removeCount = 0
-    for i = 0 to math.min(array.size(predBarsArr) - 1, 49)
-        if bar_index >= array.get(predBarsArr, i)
-            entryPrice  = array.get(predEntries, i)
-            wasBull     = array.get(predDirections, i)
-            priceDiff   = close - entryPrice
+    for i = 0 to math.min(array.size(predEntries) - 1, 49)
+        entry = array.get(predEntries, i)
+        sl    = array.get(predSLs, i)
+        tp    = array.get(predTPs, i)
+        dir   = array.get(predDirs, i)
+        exitB = array.get(predExitBars, i)
 
-            isCorrect   = (wasBull and priceDiff > 0) or (not wasBull and priceDiff < 0)
+        bool resolved = false
+        bool isWin    = false
 
-            if isCorrect
+        if dir == 1
+            if high >= tp
+                resolved := true
+                isWin    := true
+            else if low <= sl
+                resolved := true
+                isWin    := false
+        else
+            if low <= tp
+                resolved := true
+                isWin    := true
+            else if high >= sl
+                resolved := true
+                isWin    := false
+
+        // Time expiry
+        if not resolved and bar_index >= exitB
+            resolved := true
+            priceDiff = dir == 1 ? close - entry : entry - close
+            isWin    := priceDiff > 0
+
+        if resolved
+            pendingSignals -= 1
+            if isWin
                 correctSignals += 1
             else
                 incorrectSignals += 1
 
-            pendingSignals -= 1
-            pipMultiplier   = syminfo.mintick != 0 ? 1 / syminfo.mintick : 10000
-            pnlPips         = math.abs(priceDiff) * pipMultiplier * (isCorrect ? 1 : -1)
-            totalPnLPips   += pnlPips
+            pipMultiplier = syminfo.mintick != 0 ? 1 / syminfo.mintick : 10000
+            priceDiff     = dir == 1 ? close - entry : entry - close
+            pnlPips       = math.abs(priceDiff) * pipMultiplier * (isWin ? 1 : -1)
+            totalPnLPips += pnlPips
+            removeCount  += 1
 
-            removeCount += 1
-
-    // Remove validated predictions (from the front)
     if removeCount > 0
         for j = 1 to removeCount
-            if array.size(predBarsArr) > 0
-                array.shift(predPrices)
-                array.shift(predBarsArr)
-                array.shift(predDirections)
+            if array.size(predEntries) > 0
                 array.shift(predEntries)
-                array.shift(predConfidences)
+                array.shift(predExitBars)
+                array.shift(predDirs)
+                array.shift(predSLs)
+                array.shift(predTPs)
 
 winRate = (correctSignals + incorrectSignals) > 0 ? math.round(correctSignals / (correctSignals + incorrectSignals) * 100, 1) : 0.0
 
 // ============================================================================
-// VISUAL RENDERING
+// VISUAL RENDERING — SIGNALS
 // ============================================================================
 
-// — Prediction Arrow (Dashed Line + Arrow Label) —
-var line  predLine  = na
-var label predLabel = na
-var label entryLabel = na
+// Signal markers
+plotshape(newBullSignal, "Buy Signal", shape.triangleup, location.belowbar, bullColor, size=size.normal)
+plotshape(newBearSignal, "Sell Signal", shape.triangledown, location.abovebar, bearColor, size=size.normal)
 
-// Clean up previous drawings
-if not na(predLine)
-    line.delete(predLine)
-if not na(predLabel)
-    label.delete(predLabel)
-if not na(entryLabel)
-    label.delete(entryLabel)
+// Signal labels with confluence info
+if newBullSignal
+    txt = "BUY\nConf: " + str.tostring(bullConfluence) + "/6\n"
+    txt += bullStructure ? "MS " : ""
+    txt += atBullOB ? "OB " : ""
+    txt += nearBullFVG ? "FVG " : ""
+    txt += (inDiscount or inBullOTE) ? "OTE " : ""
+    txt += sweepSSL ? "Sweep " : ""
+    txt += (inActiveKZ or not useKillZones) ? "KZ" : ""
+    label.new(bar_index, low - atrVal * 0.5, txt, style=label.style_label_up, color=color.new(bullColor, 70), textcolor=bullColor, size=size.small)
 
-if showSignal and barstate.islast
-    lineColor   = isBullish ? bullColor : bearColor
-    arrowChar   = isBullish ? "▲" : "▼"
-    labelY      = targetPrice
-    signalText  = (isBullish ? "BUY" : "SELL") + "\n" + str.tostring(confidence, "#.#") + "% Confidence" + "\nTarget: " + str.tostring(targetPrice, "#.#####")
+if newBearSignal
+    txt = "SELL\nConf: " + str.tostring(bearConfluence) + "/6\n"
+    txt += bearStructure ? "MS " : ""
+    txt += atBearOB ? "OB " : ""
+    txt += nearBearFVG ? "FVG " : ""
+    txt += (inPremium or inBearOTE) ? "OTE " : ""
+    txt += sweepBSL ? "Sweep " : ""
+    txt += (inActiveKZ or not useKillZones) ? "KZ" : ""
+    label.new(bar_index, high + atrVal * 0.5, txt, style=label.style_label_down, color=color.new(bearColor, 70), textcolor=bearColor, size=size.small)
 
-    // Dashed prediction line from last candle to target
-    predLine := line.new(
-         bar_index, close,
-         bar_index + predBars, targetPrice,
-         color=lineColor,
-         style=line.style_dashed,
-         width=2)
+// TP/SL lines
+var line tpLine = na
+var line slLine = na
+var label tpLabel = na
+var label slLabel = na
 
-    // Arrow label at target
-    predLabel := label.new(
-         bar_index + predBars, targetPrice,
-         arrowChar + "\n" + signalText,
-         color=color.new(lineColor, 80),
-         textcolor=lineColor,
-         style=isBullish ? label.style_label_up : label.style_label_down,
-         size=size.normal)
+if not na(tpLine)
+    line.delete(tpLine)
+if not na(slLine)
+    line.delete(slLine)
+if not na(tpLabel)
+    label.delete(tpLabel)
+if not na(slLabel)
+    label.delete(slLabel)
 
-    // Entry point label
-    entryLabel := label.new(
-         bar_index, close,
-         "●",
-         color=color.new(lineColor, 90),
-         textcolor=lineColor,
-         style=label.style_label_center,
-         size=size.small)
-
-// — Signal markers on chart —
-plotshape(newSignal and isBullish, "Buy Signal", shape.triangleup, location.belowbar, bullColor, size=size.small)
-plotshape(newSignal and isBearish, "Sell Signal", shape.triangledown, location.abovebar, bearColor, size=size.small)
-
-// — S/R Zone Boxes —
-var box supBox = na
-var box resBox = na
-
-if showSRZones and barstate.islast
-    if not na(supBox)
-        box.delete(supBox)
-    if not na(resBox)
-        box.delete(resBox)
-
-    pivotHigh_sr = ta.pivothigh(high, srLookback / 2, srLookback / 2)
-    pivotLow_sr  = ta.pivotlow(low, srLookback / 2, srLookback / 2)
-
-    if not na(pivotHigh_sr)
-        zw = atrVal * srZoneATRMult
-        resBox := box.new(bar_index - srLookback, pivotHigh_sr + zw, bar_index + 5, pivotHigh_sr - zw, border_color=color.new(bearColor, 60), bgcolor=color.new(bearColor, 90))
-
-    if not na(pivotLow_sr)
-        zw = atrVal * srZoneATRMult
-        supBox := box.new(bar_index - srLookback, pivotLow_sr + zw, bar_index + 5, pivotLow_sr - zw, border_color=color.new(bullColor, 60), bgcolor=color.new(bullColor, 90))
-
-// — Order Block Zone Boxes —
-var box bullOBBox = na
-var box bearOBBox = na
-
-if showOBZones and barstate.islast
-    if not na(bullOBBox)
-        box.delete(bullOBBox)
-    if not na(bearOBBox)
-        box.delete(bearOBBox)
-
-    if not na(lastBullOBTop) and (bar_index - lastBullOBBar) < obLookback
-        bullOBBox := box.new(lastBullOBBar, lastBullOBTop, bar_index + 5, lastBullOBBot, border_color=color.new(bullColor, 50), bgcolor=color.new(bullColor, 85), text="Bull OB", text_color=bullColor, text_size=size.tiny)
-
-    if not na(lastBearOBTop) and (bar_index - lastBearOBBar) < obLookback
-        bearOBBox := box.new(lastBearOBBar, lastBearOBTop, bar_index + 5, lastBearOBBot, border_color=color.new(bearColor, 50), bgcolor=color.new(bearColor, 85), text="Bear OB", text_color=bearColor, text_size=size.tiny)
-
-// — FVG Zone Boxes —
-var box bullFVGBox = na
-var box bearFVGBox = na
-
-if showFVGZones and barstate.islast
-    if not na(bullFVGBox)
-        box.delete(bullFVGBox)
-    if not na(bearFVGBox)
-        box.delete(bearFVGBox)
-
-    if not na(lastBullFVGTop) and (bar_index - lastBullFVGBar) < obLookback
-        bullFVGBox := box.new(lastBullFVGBar, lastBullFVGTop, bar_index + 5, lastBullFVGBot, border_color=color.new(#2196F3, 50), bgcolor=color.new(#2196F3, 88), text="Bull FVG", text_color=#2196F3, text_size=size.tiny)
-
-    if not na(lastBearFVGTop) and (bar_index - lastBearFVGBar) < obLookback
-        bearFVGBox := box.new(lastBearFVGBar, lastBearFVGTop, bar_index + 5, lastBearFVGBot, border_color=color.new(#FF9800, 50), bgcolor=color.new(#FF9800, 88), text="Bear FVG", text_color=#FF9800, text_size=size.tiny)
+if showTargets and barstate.islast and lastSignalDir != 0 and (bar_index - lastSignalBar) < 30
+    if lastSignalDir == 1
+        tpLine := line.new(lastSignalBar, bullTP, bar_index + 5, bullTP, color=bullColor, style=line.style_dashed, width=1)
+        slLine := line.new(lastSignalBar, bullSL, bar_index + 5, bullSL, color=bearColor, style=line.style_dashed, width=1)
+        tpLabel := label.new(bar_index + 5, bullTP, "TP " + str.tostring(bullTP, "#.#####"), style=label.style_label_left, color=color.new(bullColor, 85), textcolor=bullColor, size=size.tiny)
+        slLabel := label.new(bar_index + 5, bullSL, "SL " + str.tostring(bullSL, "#.#####"), style=label.style_label_left, color=color.new(bearColor, 85), textcolor=bearColor, size=size.tiny)
+    else
+        tpLine := line.new(lastSignalBar, bearTP, bar_index + 5, bearTP, color=bullColor, style=line.style_dashed, width=1)
+        slLine := line.new(lastSignalBar, bearSL, bar_index + 5, bearSL, color=bearColor, style=line.style_dashed, width=1)
+        tpLabel := label.new(bar_index + 5, bearTP, "TP " + str.tostring(bearTP, "#.#####"), style=label.style_label_left, color=color.new(bullColor, 85), textcolor=bullColor, size=size.tiny)
+        slLabel := label.new(bar_index + 5, bearSL, "SL " + str.tostring(bearSL, "#.#####"), style=label.style_label_left, color=color.new(bearColor, 85), textcolor=bearColor, size=size.tiny)
 
 // ============================================================================
-// HELPER FUNCTIONS FOR DASHBOARD
+// VISUAL RENDERING — OB/FVG BOXES
 // ============================================================================
-f_scoreColor(s) =>
-    s > 20 ? color.new(#00E676, 0) : s < -20 ? color.new(#FF5252, 0) : color.new(#FFC107, 0)
 
-f_scoreIcon(s) =>
-    s > 20 ? "▲ " : s < -20 ? "▼ " : "◆ "
+// Draw Order Blocks (only unmitigated, most recent)
+var array<box> obBoxes = array.new_box(0)
+
+// Clean old boxes
+if array.size(obBoxes) > 0
+    for i = array.size(obBoxes) - 1 to 0
+        box.delete(array.get(obBoxes, i))
+    array.clear(obBoxes)
+
+if showOB and barstate.islast and array.size(obTops) > 0
+    int drawnOB = 0
+    for i = array.size(obTops) - 1 to 0
+        if drawnOB >= maxOB
+            break
+        if array.get(obMitigated, i) == 0
+            obT   = array.get(obTops, i)
+            obB   = array.get(obBots, i)
+            obBar = array.get(obBars, i)
+            obD   = array.get(obDirs, i)
+            clr   = obD == 1 ? bullColor : bearColor
+            txt   = obD == 1 ? "Bull OB" : "Bear OB"
+            b = box.new(obBar, obT, bar_index + 5, obB, border_color=color.new(clr, 40), bgcolor=color.new(clr, 88), text=txt, text_color=clr, text_size=size.tiny)
+            array.push(obBoxes, b)
+            drawnOB += 1
+
+// Draw FVGs (only unfilled, most recent)
+var array<box> fvgBoxes = array.new_box(0)
+
+if array.size(fvgBoxes) > 0
+    for i = array.size(fvgBoxes) - 1 to 0
+        box.delete(array.get(fvgBoxes, i))
+    array.clear(fvgBoxes)
+
+if showFVG and barstate.islast and array.size(fvgTops) > 0
+    int drawnFVG = 0
+    for i = array.size(fvgTops) - 1 to 0
+        if drawnFVG >= maxFVG
+            break
+        if array.get(fvgFilled, i) == 0
+            fT    = array.get(fvgTops, i)
+            fB    = array.get(fvgBots, i)
+            fBar  = array.get(fvgBars, i)
+            fD    = array.get(fvgDirs, i)
+            clr   = fD == 1 ? fvgBullColor : fvgBearColor
+            txt   = fD == 1 ? "Bull FVG" : "Bear FVG"
+            b = box.new(fBar, fT, bar_index + 5, fB, border_color=color.new(clr, 40), bgcolor=color.new(clr, 90), text=txt, text_color=clr, text_size=size.tiny)
+            array.push(fvgBoxes, b)
+            drawnFVG += 1
 
 // ============================================================================
-// STATISTICS DASHBOARD
+// VISUAL RENDERING — LIQUIDITY LINES
 // ============================================================================
+
+var line eqhLine = na
+var line eqlLine = na
+var label eqhLabel_draw = na
+var label eqlLabel_draw = na
+
+if not na(eqhLine)
+    line.delete(eqhLine)
+if not na(eqlLine)
+    line.delete(eqlLine)
+if not na(eqhLabel_draw)
+    label.delete(eqhLabel_draw)
+if not na(eqlLabel_draw)
+    label.delete(eqlLabel_draw)
+
+if showLiquidity and barstate.islast
+    if not na(lastEQH) and not eqhSwept
+        eqhLine := line.new(lastEQHBar, lastEQH, bar_index + 10, lastEQH, color=color.new(bearColor, 50), style=line.style_dotted, width=2)
+        eqhLabel_draw := label.new(bar_index + 10, lastEQH, "BSL $$$", style=label.style_label_left, color=color.new(bearColor, 85), textcolor=bearColor, size=size.tiny)
+
+    if not na(lastEQL) and not eqlSwept
+        eqlLine := line.new(lastEQLBar, lastEQL, bar_index + 10, lastEQL, color=color.new(bullColor, 50), style=line.style_dotted, width=2)
+        eqlLabel_draw := label.new(bar_index + 10, lastEQL, "SSL $$$", style=label.style_label_left, color=color.new(bullColor, 85), textcolor=bullColor, size=size.tiny)
+
+// ============================================================================
+// VISUAL RENDERING — PREMIUM/DISCOUNT ZONES
+// ============================================================================
+
+var line eqLine = na
+var box premBox = na
+var box discBox = na
+
+if not na(eqLine)
+    line.delete(eqLine)
+if not na(premBox)
+    box.delete(premBox)
+if not na(discBox)
+    box.delete(discBox)
+
+if showPDZones and barstate.islast
+    eqLine := line.new(bar_index - pdLookback, equilibrium, bar_index + 5, equilibrium, color=color.gray, style=line.style_solid, width=1)
+    premBox := box.new(bar_index - 10, rangeHigh, bar_index + 5, equilibrium, border_color=color.new(bearColor, 85), bgcolor=color.new(bearColor, 96), text="Premium", text_color=color.new(bearColor, 70), text_size=size.tiny, text_halign=text.align_right, text_valign=text.align_top)
+    discBox := box.new(bar_index - 10, equilibrium, bar_index + 5, rangeLow, border_color=color.new(bullColor, 85), bgcolor=color.new(bullColor, 96), text="Discount", text_color=color.new(bullColor, 70), text_size=size.tiny, text_halign=text.align_right, text_valign=text.align_bottom)
+
+// ============================================================================
+// DASHBOARD
+// ============================================================================
+
 if showDashboard and barstate.islast
-    // Dashboard position
-    dashX = switch dashboardPos
-        "Top Right"    => bar_index + 20
-        "Top Left"     => bar_index - 100
-        "Bottom Right"  => bar_index + 20
-        "Bottom Left"   => bar_index - 100
-        => bar_index + 20
+    var table dashboard = table.new(position.top_right, 2, 20, bgcolor=color.new(#1a1a2e, 10), border_color=color.new(#ffffff, 85), border_width=1, frame_color=color.new(#ffffff, 85), frame_width=1)
 
-    dashY = switch dashboardPos
-        "Top Right"    => ta.highest(high, 50) + atrVal * 3
-        "Top Left"     => ta.highest(high, 50) + atrVal * 3
-        "Bottom Right"  => ta.lowest(low, 50) - atrVal * 3
-        "Bottom Left"   => ta.lowest(low, 50) - atrVal * 3
-        => ta.highest(high, 50) + atrVal * 3
-
-    var table dashboard = table.new(position.top_right, 2, 22, bgcolor=color.new(#1a1a2e, 10), border_color=color.new(#ffffff, 80), border_width=1, frame_color=color.new(#ffffff, 80), frame_width=1)
-
-    // Helper colors
     headerBg   = color.new(#16213e, 0)
     headerTxt  = color.new(#e94560, 0)
     labelTxt   = color.new(#a2a2b5, 0)
     valueTxt   = color.new(#ffffff, 0)
-    winColor   = winRate >= 50 ? color.new(#00E676, 0) : color.new(#FF5252, 0)
+    winClr     = winRate >= 50 ? color.new(#00E676, 0) : color.new(#FF5252, 0)
+    bg1        = color.new(#1a1a2e, 0)
+    bg2        = color.new(#0f3460, 0)
 
-    // Title
-    table.cell(dashboard, 0, 0, "PRICE PREDICTOR", bgcolor=headerBg, text_color=headerTxt, text_size=size.small)
-    table.cell(dashboard, 1, 0, "DASHBOARD", bgcolor=headerBg, text_color=headerTxt, text_size=size.small)
+    // Row 0: Title
+    table.cell(dashboard, 0, 0, "SMC / ICT", bgcolor=headerBg, text_color=headerTxt, text_size=size.small)
+    table.cell(dashboard, 1, 0, "FOREX", bgcolor=headerBg, text_color=headerTxt, text_size=size.small)
     table.merge_cells(dashboard, 0, 0, 1, 0)
 
-    // Current Signal
-    sigColor = showSignal ? (isBullish ? bullColor : bearColor) : color.gray
-    sigText  = showSignal ? (isBullish ? "◆ BUY" : "◆ SELL") : "◆ NO SIGNAL"
-    table.cell(dashboard, 0, 1, "Signal", bgcolor=color.new(#0f3460, 0), text_color=labelTxt, text_size=size.small, text_halign=text.align_left)
-    table.cell(dashboard, 1, 1, sigText, bgcolor=color.new(#0f3460, 0), text_color=sigColor, text_size=size.small, text_halign=text.align_right)
+    // Row 1: Trend
+    trendTxt = trendDir == 1 ? "BULLISH" : trendDir == -1 ? "BEARISH" : "NEUTRAL"
+    trendClr = trendDir == 1 ? bullColor : trendDir == -1 ? bearColor : color.gray
+    table.cell(dashboard, 0, 1, "Trend", bgcolor=bg2, text_color=labelTxt, text_size=size.small, text_halign=text.align_left)
+    table.cell(dashboard, 1, 1, trendTxt, bgcolor=bg2, text_color=trendClr, text_size=size.small, text_halign=text.align_right)
 
-    // Confidence
-    table.cell(dashboard, 0, 2, "Confidence", bgcolor=color.new(#1a1a2e, 0), text_color=labelTxt, text_size=size.small, text_halign=text.align_left)
-    confColor = confidence >= 70 ? color.new(#00E676, 0) : confidence >= 50 ? color.new(#FFC107, 0) : color.new(#FF5252, 0)
-    table.cell(dashboard, 1, 2, str.tostring(confidence, "#.#") + "%", bgcolor=color.new(#1a1a2e, 0), text_color=confColor, text_size=size.small, text_halign=text.align_right)
+    // Row 2: Zone
+    zoneTxt = inPremium ? "PREMIUM" : "DISCOUNT"
+    zoneClr = inPremium ? bearColor : bullColor
+    table.cell(dashboard, 0, 2, "Zone", bgcolor=bg1, text_color=labelTxt, text_size=size.small, text_halign=text.align_left)
+    table.cell(dashboard, 1, 2, zoneTxt, bgcolor=bg1, text_color=zoneClr, text_size=size.small, text_halign=text.align_right)
 
-    // Target Price
-    table.cell(dashboard, 0, 3, "Target Price", bgcolor=color.new(#0f3460, 0), text_color=labelTxt, text_size=size.small, text_halign=text.align_left)
-    table.cell(dashboard, 1, 3, showSignal ? str.tostring(targetPrice, "#.#####") : "—", bgcolor=color.new(#0f3460, 0), text_color=valueTxt, text_size=size.small, text_halign=text.align_right)
+    // Row 3: Session
+    sessionTxt = inLondonKZ ? "LONDON" : inNYKZ ? "NEW YORK" : inAsianKZ ? "ASIAN" : "OFF-SESSION"
+    sessionClr = inLondonKZ ? color.new(#2196F3, 0) : inNYKZ ? color.new(#FF9800, 0) : inAsianKZ ? color.new(#9C27B0, 0) : color.gray
+    table.cell(dashboard, 0, 3, "Session", bgcolor=bg2, text_color=labelTxt, text_size=size.small, text_halign=text.align_left)
+    table.cell(dashboard, 1, 3, sessionTxt, bgcolor=bg2, text_color=sessionClr, text_size=size.small, text_halign=text.align_right)
 
-    // Separator
-    table.cell(dashboard, 0, 4, "── STATISTICS ──", bgcolor=headerBg, text_color=headerTxt, text_size=size.small)
+    // Row 4: separator
+    table.cell(dashboard, 0, 4, "── CONFLUENCE ──", bgcolor=headerBg, text_color=headerTxt, text_size=size.small)
     table.cell(dashboard, 1, 4, "", bgcolor=headerBg, text_color=headerTxt, text_size=size.small)
     table.merge_cells(dashboard, 0, 4, 1, 4)
 
-    // Total Signals
-    table.cell(dashboard, 0, 5, "Total Signals", bgcolor=color.new(#1a1a2e, 0), text_color=labelTxt, text_size=size.small, text_halign=text.align_left)
-    table.cell(dashboard, 1, 5, str.tostring(totalSignals), bgcolor=color.new(#1a1a2e, 0), text_color=valueTxt, text_size=size.small, text_halign=text.align_right)
+    // Row 5: Bull Confluence
+    table.cell(dashboard, 0, 5, "Bull Confluence", bgcolor=bg1, text_color=labelTxt, text_size=size.small, text_halign=text.align_left)
+    bcClr = bullConfluence >= minConfluence ? bullColor : color.gray
+    table.cell(dashboard, 1, 5, str.tostring(bullConfluence) + " / 6", bgcolor=bg1, text_color=bcClr, text_size=size.small, text_halign=text.align_right)
 
-    // Buy / Sell
-    table.cell(dashboard, 0, 6, "Buy / Sell", bgcolor=color.new(#0f3460, 0), text_color=labelTxt, text_size=size.small, text_halign=text.align_left)
-    table.cell(dashboard, 1, 6, str.tostring(bullSignals) + " / " + str.tostring(bearSignals), bgcolor=color.new(#0f3460, 0), text_color=valueTxt, text_size=size.small, text_halign=text.align_right)
+    // Row 6: Bear Confluence
+    table.cell(dashboard, 0, 6, "Bear Confluence", bgcolor=bg2, text_color=labelTxt, text_size=size.small, text_halign=text.align_left)
+    brClr = bearConfluence >= minConfluence ? bearColor : color.gray
+    table.cell(dashboard, 1, 6, str.tostring(bearConfluence) + " / 6", bgcolor=bg2, text_color=brClr, text_size=size.small, text_halign=text.align_right)
 
-    // Win Rate
-    table.cell(dashboard, 0, 7, "Win Rate", bgcolor=color.new(#1a1a2e, 0), text_color=labelTxt, text_size=size.small, text_halign=text.align_left)
-    table.cell(dashboard, 1, 7, str.tostring(winRate, "#.#") + "%", bgcolor=color.new(#1a1a2e, 0), text_color=winColor, text_size=size.small, text_halign=text.align_right)
+    // Row 7: Active OBs
+    table.cell(dashboard, 0, 7, "Active OBs", bgcolor=bg1, text_color=labelTxt, text_size=size.small, text_halign=text.align_left)
+    table.cell(dashboard, 1, 7, str.tostring(activeBullOB) + "▲ / " + str.tostring(activeBearOB) + "▼", bgcolor=bg1, text_color=valueTxt, text_size=size.small, text_halign=text.align_right)
 
-    // Correct / Incorrect
-    table.cell(dashboard, 0, 8, "Correct / Wrong", bgcolor=color.new(#0f3460, 0), text_color=labelTxt, text_size=size.small, text_halign=text.align_left)
-    table.cell(dashboard, 1, 8, str.tostring(correctSignals) + " / " + str.tostring(incorrectSignals), bgcolor=color.new(#0f3460, 0), text_color=valueTxt, text_size=size.small, text_halign=text.align_right)
+    // Row 8: Active FVGs
+    table.cell(dashboard, 0, 8, "Active FVGs", bgcolor=bg2, text_color=labelTxt, text_size=size.small, text_halign=text.align_left)
+    table.cell(dashboard, 1, 8, str.tostring(activeBullFVG) + "▲ / " + str.tostring(activeBearFVG) + "▼", bgcolor=bg2, text_color=valueTxt, text_size=size.small, text_halign=text.align_right)
 
-    // Pending
-    table.cell(dashboard, 0, 9, "Pending", bgcolor=color.new(#1a1a2e, 0), text_color=labelTxt, text_size=size.small, text_halign=text.align_left)
-    table.cell(dashboard, 1, 9, str.tostring(pendingSignals), bgcolor=color.new(#1a1a2e, 0), text_color=color.new(#FFC107, 0), text_size=size.small, text_halign=text.align_right)
+    // Row 9: separator
+    table.cell(dashboard, 0, 9, "── STATISTICS ──", bgcolor=headerBg, text_color=headerTxt, text_size=size.small)
+    table.cell(dashboard, 1, 9, "", bgcolor=headerBg, text_color=headerTxt, text_size=size.small)
+    table.merge_cells(dashboard, 0, 9, 1, 9)
 
-    // Total P/L (Pips)
-    table.cell(dashboard, 0, 10, "Total P/L (Pips)", bgcolor=color.new(#0f3460, 0), text_color=labelTxt, text_size=size.small, text_halign=text.align_left)
-    pnlColor = totalPnLPips >= 0 ? color.new(#00E676, 0) : color.new(#FF5252, 0)
-    table.cell(dashboard, 1, 10, str.tostring(totalPnLPips, "#.#"), bgcolor=color.new(#0f3460, 0), text_color=pnlColor, text_size=size.small, text_halign=text.align_right)
+    // Row 10: Total Signals
+    table.cell(dashboard, 0, 10, "Total Signals", bgcolor=bg1, text_color=labelTxt, text_size=size.small, text_halign=text.align_left)
+    table.cell(dashboard, 1, 10, str.tostring(totalSignals), bgcolor=bg1, text_color=valueTxt, text_size=size.small, text_halign=text.align_right)
 
-    // Avg Confidence
-    table.cell(dashboard, 0, 11, "Avg Confidence", bgcolor=color.new(#1a1a2e, 0), text_color=labelTxt, text_size=size.small, text_halign=text.align_left)
-    table.cell(dashboard, 1, 11, str.tostring(avgConfidence, "#.#") + "%", bgcolor=color.new(#1a1a2e, 0), text_color=valueTxt, text_size=size.small, text_halign=text.align_right)
+    // Row 11: Buy/Sell
+    table.cell(dashboard, 0, 11, "Buy / Sell", bgcolor=bg2, text_color=labelTxt, text_size=size.small, text_halign=text.align_left)
+    table.cell(dashboard, 1, 11, str.tostring(bullSignals) + " / " + str.tostring(bearSignals), bgcolor=bg2, text_color=valueTxt, text_size=size.small, text_halign=text.align_right)
 
-    // Module Scores Header
-    table.cell(dashboard, 0, 12, "── MODULE SCORES ──", bgcolor=headerBg, text_color=headerTxt, text_size=size.small)
-    table.cell(dashboard, 1, 12, "", bgcolor=headerBg, text_color=headerTxt, text_size=size.small)
-    table.merge_cells(dashboard, 0, 12, 1, 12)
+    // Row 12: Win Rate
+    table.cell(dashboard, 0, 12, "Win Rate", bgcolor=bg1, text_color=labelTxt, text_size=size.small, text_halign=text.align_left)
+    table.cell(dashboard, 1, 12, str.tostring(winRate, "#.#") + "%", bgcolor=bg1, text_color=winClr, text_size=size.small, text_halign=text.align_right)
 
-    // Module breakdown
-    moduleNames  = array.from("VWAP", "OB/FVG", "PriceAct", "S/R", "Fib", "RSI", "EMA", "Volume", "StochRSI")
-    moduleScores = array.from(vwapScore, obScore, paScore, srScore, fibScore, rsiScore, emaScore, volScore, stochScore)
-    moduleOn     = array.from(useVwap, useOB, usePA, useSR, useFib, useRSI, useEMA, useVol, useStoch)
+    // Row 13: Correct / Wrong
+    table.cell(dashboard, 0, 13, "Correct / Wrong", bgcolor=bg2, text_color=labelTxt, text_size=size.small, text_halign=text.align_left)
+    table.cell(dashboard, 1, 13, str.tostring(correctSignals) + " / " + str.tostring(incorrectSignals), bgcolor=bg2, text_color=valueTxt, text_size=size.small, text_halign=text.align_right)
 
-    row = 13
-    for i = 0 to 8
-        if array.get(moduleOn, i)
-            sc = array.get(moduleScores, i)
-            bg = i % 2 == 0 ? color.new(#1a1a2e, 0) : color.new(#0f3460, 0)
-            table.cell(dashboard, 0, row, array.get(moduleNames, i), bgcolor=bg, text_color=labelTxt, text_size=size.tiny, text_halign=text.align_left)
-            table.cell(dashboard, 1, row, f_scoreIcon(sc) + str.tostring(sc, "#.#"), bgcolor=bg, text_color=f_scoreColor(sc), text_size=size.tiny, text_halign=text.align_right)
-            row += 1
+    // Row 14: Pending
+    table.cell(dashboard, 0, 14, "Pending", bgcolor=bg1, text_color=labelTxt, text_size=size.small, text_halign=text.align_left)
+    table.cell(dashboard, 1, 14, str.tostring(pendingSignals), bgcolor=bg1, text_color=color.new(#FFC107, 0), text_size=size.small, text_halign=text.align_right)
+
+    // Row 15: Total P/L
+    pnlClr = totalPnLPips >= 0 ? color.new(#00E676, 0) : color.new(#FF5252, 0)
+    table.cell(dashboard, 0, 15, "Total P/L (Pips)", bgcolor=bg2, text_color=labelTxt, text_size=size.small, text_halign=text.align_left)
+    table.cell(dashboard, 1, 15, str.tostring(totalPnLPips, "#.#"), bgcolor=bg2, text_color=pnlClr, text_size=size.small, text_halign=text.align_right)
+
+    // Row 16: separator
+    table.cell(dashboard, 0, 16, "── CHECKLIST ──", bgcolor=headerBg, text_color=headerTxt, text_size=size.small)
+    table.cell(dashboard, 1, 16, "", bgcolor=headerBg, text_color=headerTxt, text_size=size.small)
+    table.merge_cells(dashboard, 0, 16, 1, 16)
+
+    // Row 17-19: confluence checklist
+    checkMS   = bullStructure or bearStructure ? "✓" : "✗"
+    checkOB   = atBullOB or atBearOB ? "✓" : "✗"
+    checkFVG  = nearBullFVG or nearBearFVG ? "✓" : "✗"
+    checkZone = (inDiscount and trendDir == 1) or (inPremium and trendDir == -1) ? "✓" : "✗"
+    checkLiq  = sweepBSL or sweepSSL ? "✓" : "✗"
+    checkKZ   = inActiveKZ ? "✓" : "✗"
+
+    msClr   = bullStructure or bearStructure ? bullColor : color.new(#FF5252, 0)
+    obClr   = atBullOB or atBearOB ? bullColor : color.new(#FF5252, 0)
+    fvgClr  = nearBullFVG or nearBearFVG ? bullColor : color.new(#FF5252, 0)
+    zoneClr2 = (inDiscount and trendDir == 1) or (inPremium and trendDir == -1) ? bullColor : color.new(#FF5252, 0)
+    liqClr  = sweepBSL or sweepSSL ? bullColor : color.new(#FF5252, 0)
+    kzClr   = inActiveKZ ? bullColor : color.new(#FF5252, 0)
+
+    table.cell(dashboard, 0, 17, checkMS + " Market Structure", bgcolor=bg1, text_color=msClr, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(dashboard, 1, 17, checkOB + " Order Block", bgcolor=bg1, text_color=obClr, text_size=size.tiny, text_halign=text.align_right)
+    table.cell(dashboard, 0, 18, checkFVG + " FVG", bgcolor=bg2, text_color=fvgClr, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(dashboard, 1, 18, checkZone + " P/D Zone", bgcolor=bg2, text_color=zoneClr2, text_size=size.tiny, text_halign=text.align_right)
+    table.cell(dashboard, 0, 19, checkLiq + " Liq Sweep", bgcolor=bg1, text_color=liqClr, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(dashboard, 1, 19, checkKZ + " Kill Zone", bgcolor=bg1, text_color=kzClr, text_size=size.tiny, text_halign=text.align_right)
 
 // ============================================================================
 // ALERTS
 // ============================================================================
-alertcondition(newSignal and isBullish, "Bullish Prediction", "BUY Signal | Confidence: {{plot_0}}% | Target: {{plot_1}}")
-alertcondition(newSignal and isBearish, "Bearish Prediction", "SELL Signal | Confidence: {{plot_0}}% | Target: {{plot_1}}")
-alertcondition(newSignal, "Any Prediction Signal", "{{plot_2}} Signal | Confidence: {{plot_0}}% | Target: {{plot_1}}")
+alertcondition(newBullSignal, "SMC Buy Signal", "BUY Signal | Confluence: " + str.tostring(bullConfluence) + "/6")
+alertcondition(newBearSignal, "SMC Sell Signal", "SELL Signal | Confluence: " + str.tostring(bearConfluence) + "/6")
+alertcondition(newBullSignal or newBearSignal, "Any SMC Signal", "SMC Signal Detected")
+alertcondition(sweepBSL, "BSL Sweep", "Buy Side Liquidity Swept")
+alertcondition(sweepSSL, "SSL Sweep", "Sell Side Liquidity Swept")
+alertcondition(chochUp or chochDn, "CHoCH Detected", "Change of Character Detected")
+alertcondition(bosUp or bosDn, "BOS Detected", "Break of Structure Detected")
 
-// Hidden plots for alerts
-plot(confidence, "Confidence", display=display.none)
-plot(targetPrice, "Target Price", display=display.none)
-plot(isBullish ? 1 : -1, "Direction", display=display.none)
-plot(compositeScore, "Composite Score", display=display.none)
+// Hidden plots
+plot(trendDir, "Trend Direction", display=display.none)
+plot(bullConfluence, "Bull Confluence", display=display.none)
+plot(bearConfluence, "Bear Confluence", display=display.none)
