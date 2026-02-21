@@ -716,6 +716,15 @@ if showFVGZones and barstate.islast
         bearFVGBox := box.new(lastBearFVGBar, lastBearFVGTop, bar_index + 5, lastBearFVGBot, border_color=color.new(#FF9800, 50), bgcolor=color.new(#FF9800, 88), text="Bear FVG", text_color=#FF9800, text_size=size.tiny)
 
 // ============================================================================
+// HELPER FUNCTIONS FOR DASHBOARD
+// ============================================================================
+f_scoreColor(s) =>
+    s > 20 ? color.new(#00E676, 0) : s < -20 ? color.new(#FF5252, 0) : color.new(#FFC107, 0)
+
+f_scoreIcon(s) =>
+    s > 20 ? "▲ " : s < -20 ? "▼ " : "◆ "
+
+// ============================================================================
 // STATISTICS DASHBOARD
 // ============================================================================
 if showDashboard and barstate.islast
@@ -815,15 +824,6 @@ if showDashboard and barstate.islast
             table.cell(dashboard, 0, row, array.get(moduleNames, i), bgcolor=bg, text_color=labelTxt, text_size=size.tiny, text_halign=text.align_left)
             table.cell(dashboard, 1, row, f_scoreIcon(sc) + str.tostring(sc, "#.#"), bgcolor=bg, text_color=f_scoreColor(sc), text_size=size.tiny, text_halign=text.align_right)
             row += 1
-
-// ============================================================================
-// HELPER FUNCTIONS FOR DASHBOARD
-// ============================================================================
-f_scoreColor(s) =>
-    s > 20 ? color.new(#00E676, 0) : s < -20 ? color.new(#FF5252, 0) : color.new(#FFC107, 0)
-
-f_scoreIcon(s) =>
-    s > 20 ? "▲ " : s < -20 ? "▼ " : "◆ "
 
 // ============================================================================
 // ALERTS
