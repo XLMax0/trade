@@ -1,0 +1,264 @@
+// This Pine Script™ source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © Piyasa Yapisi ve Giris Zamanlama Indikatoru
+// Turkiye piyasa kosullarina ozel
+
+//@version=5
+indicator("Piyasa Yapisi + Giris Zamanlama [TR]",
+     overlay=true,
+     max_labels_count=50,
+     max_lines_count=50,
+     max_boxes_count=20)
+
+// ============================================================
+// AYARLAR
+// ============================================================
+
+grp_ms = "Piyasa Yapisi"
+msLength       = input.int(5, "Pivot Periyodu", minval=2, maxval=20, group=grp_ms, tooltip="Yuksek/dusuk noktalari tespit etmek icin kullanilan periyot")
+showMS         = input.bool(true, "Piyasa Yapisini Goster", group=grp_ms)
+showBOS        = input.bool(true, "Yapi Kirilimlari (BOS) Goster", group=grp_ms)
+showCHoCH      = input.bool(true, "Karakter Degisimi (CHoCH) Goster", group=grp_ms)
+
+grp_ob = "Order Block Bolgeleri"
+showOB         = input.bool(true, "Order Block Goster", group=grp_ob)
+obLength       = input.int(5, "OB Tespit Periyodu", minval=2, maxval=20, group=grp_ob)
+maxOBAge       = input.int(50, "Maks OB Yasi (bar)", minval=10, maxval=200, group=grp_ob)
+
+grp_fvg = "Fair Value Gap (FVG)"
+showFVG        = input.bool(true, "FVG Goster", group=grp_fvg)
+fvgMinSize     = input.float(0.1, "Min FVG Buyuklugu (%)", minval=0.01, maxval=1.0, step=0.01, group=grp_fvg)
+
+grp_ema = "EMA Ribbon"
+showEmaRibbon  = input.bool(true, "EMA Ribbon Goster", group=grp_ema)
+ema1Len        = input.int(8, "EMA 1", group=grp_ema)
+ema2Len        = input.int(13, "EMA 2", group=grp_ema)
+ema3Len        = input.int(21, "EMA 3", group=grp_ema)
+ema4Len        = input.int(34, "EMA 4", group=grp_ema)
+ema5Len        = input.int(55, "EMA 5", group=grp_ema)
+
+grp_signal = "Sinyal Ayarlari"
+showSignals    = input.bool(true, "Giris Sinyalleri Goster", group=grp_signal)
+confirmCandle  = input.bool(true, "Mum Onay Gerekli", group=grp_signal, tooltip="Engulfing veya pin bar gibi guclu mum formasyonu ara")
+
+// ============================================================
+// EMA RIBBON HESAPLAMA
+// ============================================================
+
+ema1 = ta.ema(close, ema1Len)
+ema2 = ta.ema(close, ema2Len)
+ema3 = ta.ema(close, ema3Len)
+ema4 = ta.ema(close, ema4Len)
+ema5 = ta.ema(close, ema5Len)
+
+// Trend yonu (EMA siralama)
+bullishRibbon = ema1 > ema2 and ema2 > ema3 and ema3 > ema4 and ema4 > ema5
+bearishRibbon = ema1 < ema2 and ema2 < ema3 and ema3 < ema4 and ema4 < ema5
+
+ribbonColor1 = bullishRibbon ? color.new(color.green, 80) : bearishRibbon ? color.new(color.red, 80) : color.new(color.gray, 90)
+
+p1 = plot(showEmaRibbon ? ema1 : na, "EMA 8", color=color.new(color.green, 70), linewidth=1)
+p2 = plot(showEmaRibbon ? ema2 : na, "EMA 13", color=color.new(color.green, 75), linewidth=1)
+p3 = plot(showEmaRibbon ? ema3 : na, "EMA 21", color=color.new(color.orange, 70), linewidth=1)
+p4 = plot(showEmaRibbon ? ema4 : na, "EMA 34", color=color.new(color.red, 75), linewidth=1)
+p5 = plot(showEmaRibbon ? ema5 : na, "EMA 55", color=color.new(color.red, 70), linewidth=1)
+
+fill(p1, p5, color=ribbonColor1, title="EMA Ribbon Dolgu")
+
+// ============================================================
+// PIYASA YAPISI - Higher High / Higher Low / Lower High / Lower Low
+// ============================================================
+
+// Pivot noktalari
+pivotH = ta.pivothigh(high, msLength, msLength)
+pivotL = ta.pivotlow(low, msLength, msLength)
+
+var float lastPivotHigh = na
+var float lastPivotLow = na
+var float prevPivotHigh = na
+var float prevPivotLow = na
+var int lastPivotHighBar = na
+var int lastPivotLowBar = na
+
+// Trend durumu: 1 = yukari, -1 = asagi, 0 = belirsiz
+var int trendState = 0
+
+if not na(pivotH)
+    prevPivotHigh := lastPivotHigh
+    lastPivotHigh := pivotH
+    lastPivotHighBar := bar_index - msLength
+
+    if showMS
+        isHH = not na(prevPivotHigh) and pivotH > prevPivotHigh
+        isLH = not na(prevPivotHigh) and pivotH < prevPivotHigh
+
+        labelText = isHH ? "HH" : isLH ? "LH" : "H"
+        labelColor = isHH ? color.new(color.green, 20) : isLH ? color.new(color.red, 20) : color.new(color.gray, 40)
+        label.new(bar_index - msLength, pivotH, labelText,
+             style=label.style_label_down, color=labelColor, textcolor=color.white, size=size.tiny)
+
+if not na(pivotL)
+    prevPivotLow := lastPivotLow
+    lastPivotLow := pivotL
+    lastPivotLowBar := bar_index - msLength
+
+    if showMS
+        isHL = not na(prevPivotLow) and pivotL > prevPivotLow
+        isLL = not na(prevPivotLow) and pivotL < prevPivotLow
+
+        labelText = isHL ? "HL" : isLL ? "LL" : "L"
+        labelColor = isHL ? color.new(color.green, 20) : isLL ? color.new(color.red, 20) : color.new(color.gray, 40)
+        label.new(bar_index - msLength, pivotL, labelText,
+             style=label.style_label_up, color=labelColor, textcolor=color.white, size=size.tiny)
+
+// Trend tespiti
+isUptrend = not na(lastPivotHigh) and not na(prevPivotHigh) and not na(lastPivotLow) and not na(prevPivotLow) and lastPivotHigh > prevPivotHigh and lastPivotLow > prevPivotLow
+isDowntrend = not na(lastPivotHigh) and not na(prevPivotHigh) and not na(lastPivotLow) and not na(prevPivotLow) and lastPivotHigh < prevPivotHigh and lastPivotLow < prevPivotLow
+
+if isUptrend
+    trendState := 1
+if isDowntrend
+    trendState := -1
+
+// Break of Structure (BOS)
+bosUp = not na(pivotH) and not na(prevPivotHigh) and pivotH > prevPivotHigh and trendState == 1
+bosDown = not na(pivotL) and not na(prevPivotLow) and pivotL < prevPivotLow and trendState == -1
+
+if showBOS and bosUp
+    label.new(bar_index - msLength, pivotH, "BOS",
+         style=label.style_label_down, color=color.new(color.teal, 10), textcolor=color.white, size=size.small)
+
+if showBOS and bosDown
+    label.new(bar_index - msLength, pivotL, "BOS",
+         style=label.style_label_up, color=color.new(color.maroon, 10), textcolor=color.white, size=size.small)
+
+// Change of Character (CHoCH) - trend degisimi
+chochUp = not na(pivotH) and not na(prevPivotHigh) and pivotH > prevPivotHigh and trendState == -1
+chochDown = not na(pivotL) and not na(prevPivotLow) and pivotL < prevPivotLow and trendState == 1
+
+if showCHoCH and chochUp
+    label.new(bar_index - msLength, pivotH, "CHoCH",
+         style=label.style_label_down, color=color.new(color.lime, 10), textcolor=color.black, size=size.small)
+
+if showCHoCH and chochDown
+    label.new(bar_index - msLength, pivotL, "CHoCH",
+         style=label.style_label_up, color=color.new(color.fuchsia, 10), textcolor=color.white, size=size.small)
+
+// ============================================================
+// FAIR VALUE GAP (FVG)
+// ============================================================
+
+// Bullish FVG: 3. mumun dibi > 1. mumun tepe (bosluk)
+bullFVG = low > high[2] and ((low - high[2]) / close) * 100 >= fvgMinSize
+// Bearish FVG: 3. mumun tepe < 1. mumun dip (bosluk)
+bearFVG = high < low[2] and ((low[2] - high) / close) * 100 >= fvgMinSize
+
+if showFVG and bullFVG
+    box.new(bar_index - 2, low, bar_index, high[2],
+         bgcolor=color.new(color.green, 85), border_color=color.new(color.green, 50), border_width=1)
+
+if showFVG and bearFVG
+    box.new(bar_index - 2, low[2], bar_index, high,
+         bgcolor=color.new(color.red, 85), border_color=color.new(color.red, 50), border_width=1)
+
+// ============================================================
+// MUM FORMASYONLARI
+// ============================================================
+
+// Bullish Engulfing
+bullEngulfing = close > open and close[1] < open[1] and close > open[1] and open < close[1]
+
+// Bearish Engulfing
+bearEngulfing = close < open and close[1] > open[1] and close < open[1] and open > close[1]
+
+// Bullish Pin Bar (uzun alt fitil)
+bodySize = math.abs(close - open)
+lowerWick = math.min(close, open) - low
+upperWick = high - math.max(close, open)
+totalRange = high - low
+bullPinBar = totalRange > 0 and lowerWick / totalRange > 0.6 and bodySize / totalRange < 0.3 and close > open
+
+// Bearish Pin Bar (uzun ust fitil)
+bearPinBar = totalRange > 0 and upperWick / totalRange > 0.6 and bodySize / totalRange < 0.3 and close < open
+
+// ============================================================
+// GIRIS SINYALLERI
+// ============================================================
+
+// Long giris kosullari:
+// 1. Yukari trend veya ribbon bullish
+// 2. Fiyat EMA bolgesi yakininda (geri cekilme)
+// 3. Guclu mum formasyonu
+nearEmaZone = low <= ema3 * 1.005 and close > ema3
+pullbackLong = close > ema5 and low <= ema3
+
+longSetup = (trendState == 1 or bullishRibbon) and pullbackLong
+longTrigger = confirmCandle ? (bullEngulfing or bullPinBar) : true
+longSignal = showSignals and longSetup and longTrigger
+
+// Short giris kosullari:
+nearEmaZoneShort = high >= ema3 * 0.995 and close < ema3
+pullbackShort = close < ema5 and high >= ema3
+
+shortSetup = (trendState == -1 or bearishRibbon) and pullbackShort
+shortTrigger = confirmCandle ? (bearEngulfing or bearPinBar) : true
+shortSignal = showSignals and shortSetup and shortTrigger
+
+// Sinyalleri goster
+plotshape(longSignal, "Long Giris", shape.labelup, location.belowbar,
+     color=color.new(color.green, 0), size=size.normal, text="AL", textcolor=color.white)
+
+plotshape(shortSignal, "Short Giris", shape.labeldown, location.abovebar,
+     color=color.new(color.red, 0), size=size.normal, text="SAT", textcolor=color.white)
+
+// ============================================================
+// TREND DURUMU TABLOSU
+// ============================================================
+
+var table trendTable = table.new(position.bottom_right, 2, 8,
+     bgcolor=color.new(color.black, 75), border_width=1, border_color=color.new(color.gray, 50))
+
+if barstate.islast
+    // Baslik
+    table.cell(trendTable, 0, 0, "PIYASA YAPISI", text_color=color.white, text_size=size.small, bgcolor=color.new(color.purple, 50))
+    table.cell(trendTable, 1, 0, "DURUM", text_color=color.white, text_size=size.small, bgcolor=color.new(color.purple, 50))
+
+    // Trend
+    trendText = trendState == 1 ? "YUKARI" : trendState == -1 ? "ASAGI" : "BELIRSIZ"
+    trendColor = trendState == 1 ? color.green : trendState == -1 ? color.red : color.gray
+    table.cell(trendTable, 0, 1, "Trend", text_color=color.white, text_size=size.tiny)
+    table.cell(trendTable, 1, 1, trendText, text_color=trendColor, text_size=size.tiny)
+
+    // EMA Ribbon
+    ribbonText = bullishRibbon ? "BULLISH" : bearishRibbon ? "BEARISH" : "KARISIK"
+    ribbonColor = bullishRibbon ? color.green : bearishRibbon ? color.red : color.yellow
+    table.cell(trendTable, 0, 2, "EMA Ribbon", text_color=color.white, text_size=size.tiny)
+    table.cell(trendTable, 1, 2, ribbonText, text_color=ribbonColor, text_size=size.tiny)
+
+    // Son yapi
+    table.cell(trendTable, 0, 3, "Son High", text_color=color.white, text_size=size.tiny)
+    table.cell(trendTable, 1, 3, str.tostring(lastPivotHigh, "#.##"), text_color=color.white, text_size=size.tiny)
+
+    table.cell(trendTable, 0, 4, "Son Low", text_color=color.white, text_size=size.tiny)
+    table.cell(trendTable, 1, 4, str.tostring(lastPivotLow, "#.##"), text_color=color.white, text_size=size.tiny)
+
+    // Mum formasyonu
+    candleText = bullEngulfing ? "Bull Engulf" : bearEngulfing ? "Bear Engulf" : bullPinBar ? "Bull Pin" : bearPinBar ? "Bear Pin" : "Normal"
+    candleColor = (bullEngulfing or bullPinBar) ? color.green : (bearEngulfing or bearPinBar) ? color.red : color.gray
+    table.cell(trendTable, 0, 5, "Mum", text_color=color.white, text_size=size.tiny)
+    table.cell(trendTable, 1, 5, candleText, text_color=candleColor, text_size=size.tiny)
+
+    // Long/Short hazirlik
+    table.cell(trendTable, 0, 6, "Long Hazir", text_color=color.white, text_size=size.tiny)
+    table.cell(trendTable, 1, 6, longSetup ? "EVET" : "HAYIR", text_color=longSetup ? color.green : color.gray, text_size=size.tiny)
+
+    table.cell(trendTable, 0, 7, "Short Hazir", text_color=color.white, text_size=size.tiny)
+    table.cell(trendTable, 1, 7, shortSetup ? "EVET" : "HAYIR", text_color=shortSetup ? color.red : color.gray, text_size=size.tiny)
+
+// ============================================================
+// ALARMLAR
+// ============================================================
+
+alertcondition(longSignal, title="Long Giris Sinyali", message="LONG GIRIS SINYALI: {{ticker}} - Fiyat: {{close}} - Trend yukari, EMA geri cekilme + mum onayi")
+alertcondition(shortSignal, title="Short Giris Sinyali", message="SHORT GIRIS SINYALI: {{ticker}} - Fiyat: {{close}} - Trend asagi, EMA geri cekilme + mum onayi")
+alertcondition(chochUp or chochDown, title="Karakter Degisimi", message="CHoCH TESPIT: {{ticker}} - Fiyat: {{close}} - Trend degisimi olabilir!")
+alertcondition(bosUp or bosDown, title="Yapi Kirilimi", message="BOS TESPIT: {{ticker}} - Fiyat: {{close}} - Yapi kirildi, trend devam ediyor")

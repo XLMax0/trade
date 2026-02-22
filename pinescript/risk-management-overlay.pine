@@ -1,0 +1,245 @@
+// This Pine Script™ source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © Forex Risk Yonetimi - Risk Yonetim Paneli
+// Turkiye piyasa kosullarina ozel (1:10 kaldirac)
+
+//@version=5
+indicator("Risk Yonetim Paneli [TR]",
+     overlay=true,
+     max_labels_count=20,
+     max_lines_count=20)
+
+// ============================================================
+// AYARLAR
+// ============================================================
+
+grp_account = "Hesap Bilgileri"
+accountBalance = input.float(2000, "Hesap Bakiyesi ($)", minval=100, group=grp_account)
+riskPercent    = input.float(1.0, "Islem Basina Risk (%)", minval=0.1, maxval=3.0, step=0.1, group=grp_account)
+leverage       = input.int(10, "Kaldirac", minval=1, maxval=100, group=grp_account)
+spreadPips     = input.float(30, "Ortalama Makas (pip)", minval=0, group=grp_account, tooltip="Enstrumana gore degistirin. Altin: ~30, Petrol: ~3, Hisse: ~15-30")
+pipValuePer    = input.float(1.0, "Pip Degeri ($/lot)", minval=0.001, group=grp_account, tooltip="1 lot icin 1 pip'in dolar degeri")
+lotSize        = input.float(100, "Lot Buyuklugu", minval=1, group=grp_account, tooltip="1 lot = kac birim? Altin: 100, Petrol: 1000")
+pipSize        = input.float(0.01, "Pip Buyuklugu", minval=0.00001, step=0.00001, group=grp_account, tooltip="Altin: 0.01, Forex: 0.0001")
+taxRate        = input.float(10, "Stopaj Vergisi (%)", minval=0, maxval=50, group=grp_account)
+
+grp_sl = "Stop Loss / Take Profit Hesaplama"
+slMode         = input.string("ATR", "SL Hesaplama Yontemi", options=["ATR", "Manuel", "Destek/Direnc"], group=grp_sl)
+atrLen         = input.int(14, "ATR Periyodu", minval=5, group=grp_sl)
+atrMult        = input.float(2.0, "ATR Carpani (SL)", minval=0.5, maxval=5.0, step=0.1, group=grp_sl)
+manualSLPips   = input.float(100, "Manuel SL (pip)", minval=1, group=grp_sl, tooltip="Manuel mod secildiginde kullanilir")
+rrTarget       = input.float(2.0, "Hedef R:R Orani", minval=1.0, maxval=10.0, step=0.1, group=grp_sl)
+
+grp_levels = "Destek / Direnc"
+showSR         = input.bool(true, "Destek/Direnc Goster", group=grp_levels)
+srLength       = input.int(20, "Pivot Periyodu", minval=5, maxval=50, group=grp_levels)
+
+grp_display = "Gorunum"
+showTable      = input.bool(true, "Bilgi Tablosu Goster", group=grp_display)
+showSLTP       = input.bool(true, "SL/TP Cizimleri Goster", group=grp_display)
+showZones      = input.bool(true, "Tehlike Bolgeleri Goster", group=grp_display)
+tablePosition  = input.string("Sag Ust", "Tablo Pozisyonu", options=["Sol Ust", "Sag Ust", "Sol Alt", "Sag Alt"], group=grp_display)
+
+// ============================================================
+// HESAPLAMALAR
+// ============================================================
+
+atrValue = ta.atr(atrLen)
+
+// Stop Loss mesafesi hesaplama
+slDistance = switch slMode
+    "ATR" => atrValue * atrMult
+    "Manuel" => manualSLPips * pipSize
+    "Destek/Direnc" => atrValue * atrMult
+    => atrValue * atrMult
+
+// Stop Loss pip cinsinden
+slPips = slDistance / pipSize
+
+// Take Profit mesafesi
+tpDistance = slDistance * rrTarget
+tpPips = tpDistance / pipSize
+
+// Risk tutari
+riskAmount = accountBalance * (riskPercent / 100)
+
+// Pozisyon buyuklugu hesaplama (lot)
+recommendedLot = slPips > 0 ? riskAmount / (slPips * pipValuePer) : 0
+
+// Teminat hesaplama
+requiredMargin = (recommendedLot * lotSize * close) / leverage
+freeMargin = accountBalance - requiredMargin
+
+// Teminat seviyesi
+marginLevel = requiredMargin > 0 ? (accountBalance / requiredMargin) * 100 : 0
+
+// Stop-out mesafesi
+stopOutEquity = requiredMargin * 0.20 // %20 stop-out
+distanceToStopOut = accountBalance - stopOutEquity
+
+// Makas maliyeti
+spreadCost = spreadPips * pipValuePer * recommendedLot
+
+// Potansiyel kazanc (vergi sonrasi)
+grossProfit = tpPips * pipValuePer * recommendedLot
+netProfit = grossProfit > 0 ? grossProfit * (1 - taxRate / 100) : grossProfit
+
+// Potansiyel kayip
+potentialLoss = slPips * pipValuePer * recommendedLot + spreadCost
+
+// SL/TP seviyeleri
+longSL = close - slDistance
+longTP = close + tpDistance
+shortSL = close + slDistance
+shortTP = close - tpDistance
+
+// ============================================================
+// DESTEK / DIRENC SEVIYELERI
+// ============================================================
+
+pivotHigh = ta.pivothigh(high, srLength, srLength)
+pivotLow  = ta.pivotlow(low, srLength, srLength)
+
+if showSR and not na(pivotHigh)
+    label.new(bar_index - srLength, pivotHigh, "R: " + str.tostring(pivotHigh, "#.##"),
+         style=label.style_label_down, color=color.new(color.red, 70), textcolor=color.white, size=size.tiny)
+
+if showSR and not na(pivotLow)
+    label.new(bar_index - srLength, pivotLow, "S: " + str.tostring(pivotLow, "#.##"),
+         style=label.style_label_up, color=color.new(color.green, 70), textcolor=color.white, size=size.tiny)
+
+// ============================================================
+// SL/TP GORSELLERI
+// ============================================================
+
+if showSLTP
+    // Long SL/TP
+    longSlLine = line.new(bar_index - 1, longSL, bar_index + 10, longSL, color=color.new(color.red, 30), width=1, style=line.style_dashed)
+    longTpLine = line.new(bar_index - 1, longTP, bar_index + 10, longTP, color=color.new(color.green, 30), width=1, style=line.style_dashed)
+    line.delete(longSlLine[1])
+    line.delete(longTpLine[1])
+
+    // Short SL/TP
+    shortSlLine = line.new(bar_index - 1, shortSL, bar_index + 10, shortSL, color=color.new(color.red, 60), width=1, style=line.style_dotted)
+    shortTpLine = line.new(bar_index - 1, shortTP, bar_index + 10, shortTP, color=color.new(color.green, 60), width=1, style=line.style_dotted)
+    line.delete(shortSlLine[1])
+    line.delete(shortTpLine[1])
+
+// Tehlike bolgesi (teminat %150 altina duserse)
+isDangerous = marginLevel > 0 and marginLevel < 150
+if showZones
+    bgcolor(isDangerous ? color.new(color.red, 90) : na, title="Tehlike Bolgesi")
+
+// ============================================================
+// BILGI TABLOSU
+// ============================================================
+
+tablePos = switch tablePosition
+    "Sol Ust" => position.top_left
+    "Sag Ust" => position.top_right
+    "Sol Alt" => position.bottom_left
+    "Sag Alt" => position.bottom_right
+    => position.top_right
+
+var table panel = table.new(tablePos, 2, 20, bgcolor=color.new(color.black, 75), border_width=1, border_color=color.new(color.gray, 50))
+
+if showTable and barstate.islast
+    row = 0
+
+    // Baslik
+    table.cell(panel, 0, row, "RISK YONETIM PANELI", text_color=color.white, text_size=size.small, bgcolor=color.new(color.blue, 50))
+    table.cell(panel, 1, row, "DEGER", text_color=color.white, text_size=size.small, bgcolor=color.new(color.blue, 50))
+    row += 1
+
+    // Hesap bilgisi
+    table.cell(panel, 0, row, "Bakiye", text_color=color.white, text_size=size.tiny)
+    table.cell(panel, 1, row, "$" + str.tostring(accountBalance, "#,###.##"), text_color=color.white, text_size=size.tiny)
+    row += 1
+
+    table.cell(panel, 0, row, "Kaldirac", text_color=color.white, text_size=size.tiny)
+    table.cell(panel, 1, row, "1:" + str.tostring(leverage), text_color=color.white, text_size=size.tiny)
+    row += 1
+
+    // Risk
+    table.cell(panel, 0, row, "Risk/Islem", text_color=color.white, text_size=size.tiny)
+    table.cell(panel, 1, row, "%" + str.tostring(riskPercent, "#.#") + " = $" + str.tostring(riskAmount, "#.##"), text_color=color.yellow, text_size=size.tiny)
+    row += 1
+
+    // Separator
+    table.cell(panel, 0, row, "--- POZISYON ---", text_color=color.gray, text_size=size.tiny, bgcolor=color.new(color.gray, 85))
+    table.cell(panel, 1, row, "", text_color=color.gray, text_size=size.tiny, bgcolor=color.new(color.gray, 85))
+    row += 1
+
+    // Onerilen lot
+    lotColor = recommendedLot > 0 ? color.green : color.red
+    table.cell(panel, 0, row, "Onerilen Lot", text_color=color.white, text_size=size.tiny)
+    table.cell(panel, 1, row, str.tostring(recommendedLot, "#.####"), text_color=lotColor, text_size=size.tiny)
+    row += 1
+
+    // Teminat
+    marginColor = marginLevel >= 300 ? color.green : marginLevel >= 150 ? color.yellow : color.red
+    table.cell(panel, 0, row, "Gerekli Teminat", text_color=color.white, text_size=size.tiny)
+    table.cell(panel, 1, row, "$" + str.tostring(requiredMargin, "#.##"), text_color=color.white, text_size=size.tiny)
+    row += 1
+
+    table.cell(panel, 0, row, "Serbest Teminat", text_color=color.white, text_size=size.tiny)
+    table.cell(panel, 1, row, "$" + str.tostring(freeMargin, "#.##"), text_color=freeMargin > 0 ? color.green : color.red, text_size=size.tiny)
+    row += 1
+
+    table.cell(panel, 0, row, "Teminat Seviyesi", text_color=color.white, text_size=size.tiny)
+    table.cell(panel, 1, row, "%" + str.tostring(marginLevel, "#.#"), text_color=marginColor, text_size=size.tiny)
+    row += 1
+
+    // Separator
+    table.cell(panel, 0, row, "--- SL / TP ---", text_color=color.gray, text_size=size.tiny, bgcolor=color.new(color.gray, 85))
+    table.cell(panel, 1, row, "", text_color=color.gray, text_size=size.tiny, bgcolor=color.new(color.gray, 85))
+    row += 1
+
+    // SL bilgisi
+    table.cell(panel, 0, row, "SL Mesafesi", text_color=color.white, text_size=size.tiny)
+    table.cell(panel, 1, row, str.tostring(slPips, "#.#") + " pip ($" + str.tostring(potentialLoss, "#.##") + ")", text_color=color.red, text_size=size.tiny)
+    row += 1
+
+    // TP bilgisi
+    table.cell(panel, 0, row, "TP Mesafesi", text_color=color.white, text_size=size.tiny)
+    table.cell(panel, 1, row, str.tostring(tpPips, "#.#") + " pip ($" + str.tostring(grossProfit, "#.##") + ")", text_color=color.green, text_size=size.tiny)
+    row += 1
+
+    // R:R
+    rrColor = rrTarget >= 1.5 ? color.green : color.red
+    table.cell(panel, 0, row, "R:R Orani", text_color=color.white, text_size=size.tiny)
+    table.cell(panel, 1, row, "1:" + str.tostring(rrTarget, "#.##"), text_color=rrColor, text_size=size.tiny)
+    row += 1
+
+    // Separator
+    table.cell(panel, 0, row, "--- MALIYET ---", text_color=color.gray, text_size=size.tiny, bgcolor=color.new(color.gray, 85))
+    table.cell(panel, 1, row, "", text_color=color.gray, text_size=size.tiny, bgcolor=color.new(color.gray, 85))
+    row += 1
+
+    // Makas
+    table.cell(panel, 0, row, "Makas Maliyeti", text_color=color.white, text_size=size.tiny)
+    table.cell(panel, 1, row, "$" + str.tostring(spreadCost, "#.##"), text_color=color.orange, text_size=size.tiny)
+    row += 1
+
+    // Vergi sonrasi net
+    table.cell(panel, 0, row, "Net Kazanc (TP)", text_color=color.white, text_size=size.tiny)
+    table.cell(panel, 1, row, "$" + str.tostring(netProfit - spreadCost, "#.##"), text_color=color.green, text_size=size.tiny)
+    row += 1
+
+    // Separator
+    table.cell(panel, 0, row, "--- SEVİYELER ---", text_color=color.gray, text_size=size.tiny, bgcolor=color.new(color.gray, 85))
+    table.cell(panel, 1, row, "", text_color=color.gray, text_size=size.tiny, bgcolor=color.new(color.gray, 85))
+    row += 1
+
+    // Long seviyeleri
+    table.cell(panel, 0, row, "Long SL / TP", text_color=color.white, text_size=size.tiny)
+    table.cell(panel, 1, row, str.tostring(longSL, "#.##") + " / " + str.tostring(longTP, "#.##"), text_color=color.blue, text_size=size.tiny)
+    row += 1
+
+    // Short seviyeleri
+    table.cell(panel, 0, row, "Short SL / TP", text_color=color.white, text_size=size.tiny)
+    table.cell(panel, 1, row, str.tostring(shortSL, "#.##") + " / " + str.tostring(shortTP, "#.##"), text_color=color.purple, text_size=size.tiny)
+    row += 1
+
+    // ATR
+    table.cell(panel, 0, row, "ATR (" + str.tostring(atrLen) + ")", text_color=color.white, text_size=size.tiny)
+    table.cell(panel, 1, row, str.tostring(atrValue, "#.####"), text_color=color.white, text_size=size.tiny)

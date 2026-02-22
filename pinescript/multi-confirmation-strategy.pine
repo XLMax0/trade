@@ -1,0 +1,274 @@
+// This Pine Script™ source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © Forex Risk Yonetimi - Coklu Onay Giris Stratejisi
+// Turkiye piyasa kosullarina ozel (1:10 kaldirac)
+
+//@version=5
+strategy("Coklu Onay Giris Stratejisi [TR]",
+     overlay=true,
+     default_qty_type=strategy.percent_of_equity,
+     default_qty_value=100,
+     initial_capital=2000,
+     commission_type=strategy.commission.percent,
+     commission_value=0.05,
+     slippage=2,
+     pyramiding=0,
+     calc_on_every_tick=false)
+
+// ============================================================
+// AYARLAR / SETTINGS
+// ============================================================
+
+// --- Genel Ayarlar ---
+grp_general = "Genel Ayarlar"
+riskPercent       = input.float(1.0, "Islem Basina Risk (%)", minval=0.1, maxval=3.0, step=0.1, group=grp_general, tooltip="Her islemde hesabinizin yuzde kacini riske ediyorsunuz. %1 onerilir, %2 maksimum.")
+accountBalance    = input.float(2000, "Hesap Bakiyesi ($)", minval=100, group=grp_general, tooltip="Gercek hesap bakiyenizi girin")
+leverage          = input.int(10, "Kaldirac Orani", minval=1, maxval=100, group=grp_general, tooltip="Turkiye'de 1:10 sabit")
+
+// --- Trend Ayarlari ---
+grp_trend = "Trend Tespiti"
+ema_fast          = input.int(21, "Hizli EMA", minval=5, maxval=50, group=grp_trend)
+ema_slow          = input.int(50, "Yavas EMA", minval=20, maxval=200, group=grp_trend)
+ema_trend         = input.int(200, "Trend EMA", minval=100, maxval=500, group=grp_trend)
+useEmaFilter      = input.bool(true, "EMA Filtresi Kullan", group=grp_trend)
+
+// --- RSI Ayarlari ---
+grp_rsi = "RSI Ayarlari"
+rsiLength         = input.int(14, "RSI Periyodu", minval=5, maxval=30, group=grp_rsi)
+rsiOverbought     = input.int(70, "RSI Asiri Alim", minval=60, maxval=90, group=grp_rsi)
+rsiOversold       = input.int(30, "RSI Asiri Satim", minval=10, maxval=40, group=grp_rsi)
+useRsiFilter      = input.bool(true, "RSI Filtresi Kullan", group=grp_rsi)
+
+// --- MACD Ayarlari ---
+grp_macd = "MACD Ayarlari"
+macdFast          = input.int(12, "MACD Hizli", minval=5, maxval=30, group=grp_macd)
+macdSlow          = input.int(26, "MACD Yavas", minval=15, maxval=50, group=grp_macd)
+macdSignal        = input.int(9, "MACD Sinyal", minval=3, maxval=20, group=grp_macd)
+useMacdFilter     = input.bool(true, "MACD Filtresi Kullan", group=grp_macd)
+
+// --- ATR / Stop Loss ---
+grp_sl = "Stop Loss ve Take Profit"
+atrLength         = input.int(14, "ATR Periyodu", minval=5, maxval=50, group=grp_sl)
+atrMultiplierSL   = input.float(2.0, "ATR Stop Loss Carpani", minval=0.5, maxval=5.0, step=0.1, group=grp_sl, tooltip="Stop loss icin ATR carpani. 2.0 onerilir.")
+atrMultiplierTP   = input.float(3.0, "ATR Take Profit Carpani", minval=1.0, maxval=10.0, step=0.1, group=grp_sl, tooltip="Take profit icin ATR carpani. SL'nin en az 1.5 kati olmali.")
+useTrailingStop   = input.bool(true, "Trailing Stop Kullan", group=grp_sl)
+trailMultiplier   = input.float(1.5, "Trailing Stop ATR Carpani", minval=0.5, maxval=5.0, step=0.1, group=grp_sl)
+
+// --- Hacim Filtresi ---
+grp_vol = "Hacim Filtresi"
+volLength         = input.int(20, "Hacim MA Periyodu", minval=5, maxval=50, group=grp_vol)
+volMultiplier     = input.float(1.0, "Min Hacim Carpani", minval=0.5, maxval=3.0, step=0.1, group=grp_vol, tooltip="Hacim, ortalamanin bu kati ustunde olmali")
+useVolFilter      = input.bool(true, "Hacim Filtresi Kullan", group=grp_vol)
+
+// --- Onay Sayisi ---
+grp_confirm = "Onay Gereksinimleri"
+minConfirmations  = input.int(3, "Minimum Onay Sayisi", minval=2, maxval=5, group=grp_confirm, tooltip="Islem acmak icin kac onay gerekli? 3 onerilir.")
+
+// --- Islem Saatleri ---
+grp_time = "Islem Saatleri"
+useTimeFilter     = input.bool(false, "Saat Filtresi Kullan", group=grp_time, tooltip="Sadece belirli saatlerde islem ac")
+startHour         = input.int(10, "Baslangic Saati (UTC)", minval=0, maxval=23, group=grp_time)
+endHour           = input.int(20, "Bitis Saati (UTC)", minval=0, maxval=23, group=grp_time)
+
+// ============================================================
+// HESAPLAMALAR / CALCULATIONS
+// ============================================================
+
+// --- EMA Hesaplamalari ---
+fastEma = ta.ema(close, ema_fast)
+slowEma = ta.ema(close, ema_slow)
+trendEma = ta.ema(close, ema_trend)
+
+// --- RSI ---
+rsiValue = ta.rsi(close, rsiLength)
+
+// --- MACD ---
+[macdLine, signalLine, histLine] = ta.macd(close, macdFast, macdSlow, macdSignal)
+
+// --- ATR ---
+atrValue = ta.atr(atrLength)
+
+// --- Hacim ---
+volSma = ta.sma(volume, volLength)
+
+// ============================================================
+// ONAY SINYALLERI / CONFIRMATION SIGNALS
+// ============================================================
+
+// ONAY 1: EMA Trend Yonu
+emaLongConfirm  = useEmaFilter ? (fastEma > slowEma and close > trendEma) : true
+emaShortConfirm = useEmaFilter ? (fastEma < slowEma and close < trendEma) : true
+
+// ONAY 2: RSI Durumu
+rsiLongConfirm  = useRsiFilter ? (rsiValue > rsiOversold and rsiValue < 60) : true
+rsiShortConfirm = useRsiFilter ? (rsiValue < rsiOverbought and rsiValue > 40) : true
+
+// ONAY 3: MACD Momentum
+macdLongConfirm  = useMacdFilter ? (macdLine > signalLine and histLine > histLine[1]) : true
+macdShortConfirm = useMacdFilter ? (macdLine < signalLine and histLine < histLine[1]) : true
+
+// ONAY 4: Hacim Onay
+volConfirm = useVolFilter ? (volume > volSma * volMultiplier) : true
+
+// ONAY 5: EMA Crossover (taze sinyal)
+emaCrossUp   = ta.crossover(fastEma, slowEma)
+emaCrossDown = ta.crossunder(fastEma, slowEma)
+
+// Saat filtresi
+currentHour = hour(time, "UTC")
+timeOk = useTimeFilter ? (currentHour >= startHour and currentHour < endHour) : true
+
+// ============================================================
+// ONAY SAYACI / CONFIRMATION COUNTER
+// ============================================================
+
+longConfirmCount = 0
+longConfirmCount := (emaLongConfirm ? 1 : 0) + (rsiLongConfirm ? 1 : 0) + (macdLongConfirm ? 1 : 0) + (volConfirm ? 1 : 0) + (emaCrossUp ? 1 : 0)
+
+shortConfirmCount = 0
+shortConfirmCount := (emaShortConfirm ? 1 : 0) + (rsiShortConfirm ? 1 : 0) + (macdShortConfirm ? 1 : 0) + (volConfirm ? 1 : 0) + (emaCrossDown ? 1 : 0)
+
+// ============================================================
+// GIRIS SINYALLERI / ENTRY SIGNALS
+// ============================================================
+
+longEntry  = longConfirmCount >= minConfirmations and timeOk and strategy.position_size == 0
+shortEntry = shortConfirmCount >= minConfirmations and timeOk and strategy.position_size == 0
+
+// ============================================================
+// STOP LOSS & TAKE PROFIT HESAPLAMA
+// ============================================================
+
+longSL  = close - (atrValue * atrMultiplierSL)
+longTP  = close + (atrValue * atrMultiplierTP)
+shortSL = close + (atrValue * atrMultiplierSL)
+shortTP = close - (atrValue * atrMultiplierTP)
+
+// ============================================================
+// POZISYON BUYUKLUGU HESAPLAMA
+// ============================================================
+
+// Risk tutari
+riskAmount = accountBalance * (riskPercent / 100)
+
+// SL mesafesi ($ cinsinden)
+longSlDistance  = math.abs(close - longSL)
+shortSlDistance = math.abs(shortSL - close)
+
+// ============================================================
+// ISLEM EMIRLERI / TRADE EXECUTION
+// ============================================================
+
+if longEntry
+    strategy.entry("Long", strategy.long)
+    strategy.exit("Long Exit", "Long", stop=longSL, limit=longTP)
+
+if shortEntry
+    strategy.entry("Short", strategy.short)
+    strategy.exit("Short Exit", "Short", stop=shortSL, limit=shortTP)
+
+// Trailing stop
+if useTrailingStop and strategy.position_size > 0
+    trailPoints = atrValue * trailMultiplier / syminfo.mintick
+    strategy.exit("Trail Long", "Long", trail_points=trailPoints, trail_offset=trailPoints * 0.5)
+
+if useTrailingStop and strategy.position_size < 0
+    trailPoints = atrValue * trailMultiplier / syminfo.mintick
+    strategy.exit("Trail Short", "Short", trail_points=trailPoints, trail_offset=trailPoints * 0.5)
+
+// ============================================================
+// GORSEL ELEMANLAR / VISUAL ELEMENTS
+// ============================================================
+
+// EMA cizgileri
+plot(fastEma, "Hizli EMA", color=color.new(color.blue, 0), linewidth=1)
+plot(slowEma, "Yavas EMA", color=color.new(color.orange, 0), linewidth=1)
+plot(trendEma, "Trend EMA", color=color.new(color.gray, 50), linewidth=2)
+
+// Giris sinyalleri
+plotshape(longEntry, "Long Sinyal", shape.triangleup, location.belowbar, color.new(color.green, 0), size=size.normal)
+plotshape(shortEntry, "Short Sinyal", shape.triangledown, location.abovebar, color.new(color.red, 0), size=size.normal)
+
+// SL/TP seviyeleri (sadece pozisyon varken)
+plot(strategy.position_size > 0 ? longSL : na, "Long SL", color=color.new(color.red, 0), style=plot.style_linebr, linewidth=1)
+plot(strategy.position_size > 0 ? longTP : na, "Long TP", color=color.new(color.green, 0), style=plot.style_linebr, linewidth=1)
+plot(strategy.position_size < 0 ? shortSL : na, "Short SL", color=color.new(color.red, 0), style=plot.style_linebr, linewidth=1)
+plot(strategy.position_size < 0 ? shortTP : na, "Short TP", color=color.new(color.green, 0), style=plot.style_linebr, linewidth=1)
+
+// Arka plan rengi - onay gucune gore
+confirmStrength = math.max(longConfirmCount, shortConfirmCount)
+bgColor = confirmStrength >= minConfirmations ?
+     (longConfirmCount >= minConfirmations ? color.new(color.green, 92) : color.new(color.red, 92)) :
+     color.new(color.gray, 97)
+bgcolor(bgColor, title="Onay Arka Plan")
+
+// ============================================================
+// BILGI TABLOSU / INFO TABLE
+// ============================================================
+
+var table infoTable = table.new(position.top_right, 2, 12, bgcolor=color.new(color.black, 80), border_width=1, border_color=color.gray)
+
+if barstate.islast
+    // Baslik
+    table.cell(infoTable, 0, 0, "PARAMETRE", text_color=color.white, text_size=size.small, bgcolor=color.new(color.blue, 60))
+    table.cell(infoTable, 1, 0, "DEGER", text_color=color.white, text_size=size.small, bgcolor=color.new(color.blue, 60))
+
+    // Hesap
+    table.cell(infoTable, 0, 1, "Bakiye", text_color=color.white, text_size=size.tiny)
+    table.cell(infoTable, 1, 1, "$" + str.tostring(accountBalance, "#.##"), text_color=color.white, text_size=size.tiny)
+
+    // Risk
+    table.cell(infoTable, 0, 2, "Risk/Islem", text_color=color.white, text_size=size.tiny)
+    table.cell(infoTable, 1, 2, "%" + str.tostring(riskPercent, "#.#") + " ($" + str.tostring(riskAmount, "#.##") + ")", text_color=color.yellow, text_size=size.tiny)
+
+    // ATR
+    table.cell(infoTable, 0, 3, "ATR", text_color=color.white, text_size=size.tiny)
+    table.cell(infoTable, 1, 3, str.tostring(atrValue, "#.####"), text_color=color.white, text_size=size.tiny)
+
+    // SL mesafesi
+    table.cell(infoTable, 0, 4, "SL Mesafesi", text_color=color.white, text_size=size.tiny)
+    table.cell(infoTable, 1, 4, str.tostring(atrValue * atrMultiplierSL, "#.####"), text_color=color.red, text_size=size.tiny)
+
+    // TP mesafesi
+    table.cell(infoTable, 0, 5, "TP Mesafesi", text_color=color.white, text_size=size.tiny)
+    table.cell(infoTable, 1, 5, str.tostring(atrValue * atrMultiplierTP, "#.####"), text_color=color.green, text_size=size.tiny)
+
+    // R:R orani
+    rrRatio = atrMultiplierTP / atrMultiplierSL
+    rrColor = rrRatio >= 1.5 ? color.green : color.red
+    table.cell(infoTable, 0, 6, "R:R Orani", text_color=color.white, text_size=size.tiny)
+    table.cell(infoTable, 1, 6, "1:" + str.tostring(rrRatio, "#.##"), text_color=rrColor, text_size=size.tiny)
+
+    // RSI
+    rsiColor = rsiValue > rsiOverbought ? color.red : rsiValue < rsiOversold ? color.green : color.white
+    table.cell(infoTable, 0, 7, "RSI", text_color=color.white, text_size=size.tiny)
+    table.cell(infoTable, 1, 7, str.tostring(rsiValue, "#.#"), text_color=rsiColor, text_size=size.tiny)
+
+    // MACD
+    macdColor = macdLine > signalLine ? color.green : color.red
+    table.cell(infoTable, 0, 8, "MACD", text_color=color.white, text_size=size.tiny)
+    table.cell(infoTable, 1, 8, macdLine > signalLine ? "YUKARI" : "ASAGI", text_color=macdColor, text_size=size.tiny)
+
+    // Long onay
+    longColor = longConfirmCount >= minConfirmations ? color.green : color.gray
+    table.cell(infoTable, 0, 9, "Long Onay", text_color=color.white, text_size=size.tiny)
+    table.cell(infoTable, 1, 9, str.tostring(longConfirmCount) + "/" + str.tostring(minConfirmations), text_color=longColor, text_size=size.tiny)
+
+    // Short onay
+    shortColor = shortConfirmCount >= minConfirmations ? color.red : color.gray
+    table.cell(infoTable, 0, 10, "Short Onay", text_color=color.white, text_size=size.tiny)
+    table.cell(infoTable, 1, 10, str.tostring(shortConfirmCount) + "/" + str.tostring(minConfirmations), text_color=shortColor, text_size=size.tiny)
+
+    // Pozisyon durumu
+    posText = strategy.position_size > 0 ? "LONG" : strategy.position_size < 0 ? "SHORT" : "YOK"
+    posColor = strategy.position_size > 0 ? color.green : strategy.position_size < 0 ? color.red : color.gray
+    table.cell(infoTable, 0, 11, "Pozisyon", text_color=color.white, text_size=size.tiny)
+    table.cell(infoTable, 1, 11, posText, text_color=posColor, text_size=size.tiny)
+
+// ============================================================
+// ALARMLAR / ALERTS
+// ============================================================
+
+alertcondition(longEntry, title="Long Giris Sinyali", message="LONG GIRIS: {{ticker}} - Fiyat: {{close}} - {{time}}")
+alertcondition(shortEntry, title="Short Giris Sinyali", message="SHORT GIRIS: {{ticker}} - Fiyat: {{close}} - {{time}}")
+alertcondition(longConfirmCount >= minConfirmations - 1, title="Long Onay Yaklasti", message="DIKKAT: {{ticker}} long icin {{close}} seviyesinde onay yaklasti")
+alertcondition(shortConfirmCount >= minConfirmations - 1, title="Short Onay Yaklasti", message="DIKKAT: {{ticker}} short icin {{close}} seviyesinde onay yaklasti")
