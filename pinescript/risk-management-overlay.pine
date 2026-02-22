@@ -126,8 +126,8 @@ if showSLTP
 
 // Tehlike bolgesi (teminat %150 altina duserse)
 isDangerous = marginLevel > 0 and marginLevel < 150
-if showZones
-    bgcolor(isDangerous ? color.new(color.red, 90) : na, title="Tehlike Bolgesi")
+dangerColor = showZones and isDangerous ? color.new(color.red, 90) : na
+bgcolor(dangerColor, title="Tehlike Bolgesi")
 
 // ============================================================
 // BILGI TABLOSU
