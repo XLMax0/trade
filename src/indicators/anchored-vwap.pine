@@ -126,7 +126,7 @@ tpslStyle = input.string("Lines", "Display Style            ", ["Lines", "Labels
 // ---- Statistics Panel Settings ----
 shoStats = input.bool(true, "Show Statistics Panel", "Display detailed trading statistics table.", inline="statEn", group=g7, display=display.none)
 statPos = input.string("Top Right", "Position                  ", ["Top Left", "Top Right", "Bottom Left", "Bottom Right"], inline="statPos", group=g7, display=display.none)
-statSize = input.string("small", "Text Size                ", ["tiny", "small", "normal"], inline="statSz", group=g7, display=display.none)
+statSize = input.string("normal", "Text Size                ", ["tiny", "small", "normal", "large"], inline="statSz", group=g7, display=display.none)
 statBgClr = input.color(color.new(color.black, 80), "Background  ", inline="statBg", group=g7, display=display.none)
 statTxtClr = input.color(color.white, "Text Color", inline="statBg", group=g7, display=display.none)
 // }
@@ -563,6 +563,7 @@ statTblPos = switch statPos
 statTxtSize = switch statSize
     "tiny" => size.tiny
     "small" => size.small
+    "large" => size.large
     => size.normal
 
 // Create statistics table at global scope
@@ -574,24 +575,24 @@ statRow(tblRef, row, lbl, val, valClr, txtClr, txtSz) =>
     table.cell(tblRef, 1, row, val, text_color=valClr, text_size=txtSz, text_halign=text.align_right)
     table.merge_cells(tblRef, 1, row, 2, row)
 
-if shoStats and barstate.islast and not na(statTbl)
-    // Calculate derived stats
-    winRate = totalTrades > 0 ? totalWins / totalTrades * 100 : 0.0
-    avgWin = totalWins > 0 ? grossProfit / totalWins : 0.0
-    avgLoss = totalLosses > 0 ? grossLoss / totalLosses : 0.0
-    profitFactor = grossLoss > 0 ? grossProfit / grossLoss : grossProfit > 0 ? 999.99 : 0.0
-    netProfit = grossProfit - grossLoss
-    longWinRate = longTrades > 0 ? longWins / longTrades * 100 : 0.0
-    shortWinRate = shortTrades > 0 ? shortWins / shortTrades * 100 : 0.0
-    shortLosses = shortTrades - shortWins
-    longLosses = longTrades - longWins
+// Calculate derived stats (every bar so table stays current while scrolling)
+winRate = totalTrades > 0 ? totalWins / totalTrades * 100 : 0.0
+statAvgWin = totalWins > 0 ? grossProfit / totalWins : 0.0
+statAvgLoss = totalLosses > 0 ? grossLoss / totalLosses : 0.0
+profitFactor = grossLoss > 0 ? grossProfit / grossLoss : grossProfit > 0 ? 999.99 : 0.0
+netProfit = grossProfit - grossLoss
+longWinRate = longTrades > 0 ? longWins / longTrades * 100 : 0.0
+shortWinRate = shortTrades > 0 ? shortWins / shortTrades * 100 : 0.0
+statShortLosses = shortTrades - shortWins
+statLongLosses = longTrades - longWins
+meanReturn = totalTrades > 0 ? sumReturns / totalTrades : 0.0
+variance = totalTrades > 1 ? (sumReturnsSq - sumReturns * sumReturns / totalTrades) / (totalTrades - 1) : 0.0
+stdDev = math.sqrt(math.max(variance, 0))
+sharpeRatio = stdDev > 0 ? meanReturn / stdDev : 0.0
+statRR = statAvgLoss != 0 ? statAvgWin / statAvgLoss : 0.0
 
-    // Sharpe Ratio approximation
-    meanReturn = totalTrades > 0 ? sumReturns / totalTrades : 0.0
-    variance = totalTrades > 1 ? (sumReturnsSq - sumReturns * sumReturns / totalTrades) / (totalTrades - 1) : 0.0
-    stdDev = math.sqrt(math.max(variance, 0))
-    sharpeRatio = stdDev > 0 ? meanReturn / stdDev : 0.0
-
+// Update table on every bar (keeps it visible while scrolling)
+if shoStats and not na(statTbl)
     // Header
     table.cell(statTbl, 0, 0, "AVWAP Trading Stats", text_color=statTxtClr, text_size=statTxtSize, bgcolor=color.new(color.blue, 70), text_halign=text.align_center)
     table.merge_cells(statTbl, 0, 0, 2, 0)
@@ -609,10 +610,9 @@ if shoStats and barstate.islast and not na(statTbl)
     statRow(statTbl, 6, "Net Profit", str.tostring(netProfit, "#.##"), netProfit >= 0 ? color.lime : color.red, statTxtClr, statTxtSize)
 
     // Averages
-    statRow(statTbl, 7, "Avg Win", str.tostring(avgWin, "#.##"), color.lime, statTxtClr, statTxtSize)
-    statRow(statTbl, 8, "Avg Loss", str.tostring(avgLoss, "#.##"), color.red, statTxtClr, statTxtSize)
-    rr = avgLoss != 0 ? avgWin / avgLoss : 0.0
-    statRow(statTbl, 9, "Avg RR Ratio", str.tostring(rr, "#.##"), rr >= 1 ? color.lime : color.orange, statTxtClr, statTxtSize)
+    statRow(statTbl, 7, "Avg Win", str.tostring(statAvgWin, "#.##"), color.lime, statTxtClr, statTxtSize)
+    statRow(statTbl, 8, "Avg Loss", str.tostring(statAvgLoss, "#.##"), color.red, statTxtClr, statTxtSize)
+    statRow(statTbl, 9, "Avg RR Ratio", str.tostring(statRR, "#.##"), statRR >= 1 ? color.lime : color.orange, statTxtClr, statTxtSize)
 
     // Risk metrics
     statRow(statTbl, 10, "Max Drawdown", str.tostring(maxDrawdown, "#.##"), maxDrawdown > 0 ? color.red : statTxtClr, statTxtClr, statTxtSize)
@@ -625,8 +625,8 @@ if shoStats and barstate.islast and not na(statTbl)
     // Long/Short breakdown
     table.cell(statTbl, 0, 14, "Long / Short", text_color=statTxtClr, text_size=statTxtSize, bgcolor=color.new(color.blue, 70), text_halign=text.align_center)
     table.merge_cells(statTbl, 0, 14, 2, 14)
-    statRow(statTbl, 15, "Long (W/L)", str.tostring(longWins) + " / " + str.tostring(longLosses) + "  (" + str.tostring(longWinRate, "#.1") + "%)", color.lime, statTxtClr, statTxtSize)
-    statRow(statTbl, 16, "Short (W/L)", str.tostring(shortWins) + " / " + str.tostring(shortLosses) + "  (" + str.tostring(shortWinRate, "#.1") + "%)", color.red, statTxtClr, statTxtSize)
+    statRow(statTbl, 15, "Long (W/L)", str.tostring(longWins) + " / " + str.tostring(statLongLosses) + "  (" + str.tostring(longWinRate, "#.1") + "%)", color.lime, statTxtClr, statTxtSize)
+    statRow(statTbl, 16, "Short (W/L)", str.tostring(shortWins) + " / " + str.tostring(statShortLosses) + "  (" + str.tostring(shortWinRate, "#.1") + "%)", color.red, statTxtClr, statTxtSize)
 // }
 
 
