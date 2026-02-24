@@ -1,0 +1,328 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © liquid-trader
+
+// This script plots, and auto-updates, 3 separate VWAPs: a traditional VWAP, a VWAP anchored to a trends high,
+// and another anchored to a trends low. Because VWAP is a prominent market maker tool for executing large trades,
+// day traders can use it to better anticipate trends, mean reversion, and breakouts.
+// More here: https://www.tradingview.com/script/72stxVxI-Anchored-VWAP-Auto-High-Low/
+
+//@version=6
+indicator("Anchored VWAP (Auto High & Low)", "AVWAP (Auto Hi / Lo)", overlay=true, max_bars_back=0)
+import liquid-trader/UtilityLibrary/5 as util
+
+
+// ---------------------------------------------------- SETTINGS ---------------------------------------------------- {
+
+// Base Colors
+const color none = color.new(color.black, 100), const color clr1 = color.aqua
+
+// Groups & Average Types
+const string g1 = "High / Low Anchored VWAP", const string g2 = "Daily VWAP", const string g3 = "Time Weighted Average Price", const string g4 = "Market Hours", const string O = "open", const string H = "high", const string L = "low", const string C = "close", const string HL2 = "hl2", const string HLC3 = "hlc3", const string OHLC4 = "ohlc4", const string HLCC4 = "hlcc4"
+
+// High Anchor
+shoHiA = input.bool(true, "High Anchor           ", "VWAP anchored and weighted to trend highs.", inline="hi", group=g1, display=display.none)
+hiAnClr = input.color(clr1, "", inline="hi", group=g1, display=display.none)
+hiWidth = input.int(2, "", 1, inline="hi", group=g1, display=display.none)
+hiAvg = input.string(H, "", [O,H,L,C,HL2, HLC3, OHLC4, HLCC4], inline="hi", group=g1, display=display.none)
+
+// Low Anchor
+shoLoA = input.bool(true, "Low Anchor            ", "VWAP anchored and weighted to trend lows.", inline="lo", group=g1, display=display.none)
+loAnClr = input.color(clr1, "", inline="lo", group=g1, display=display.none)
+loWidth = input.int(2, "", 1, inline="lo", group=g1, display=display.none)
+loAvg = input.string(L, "", [O,H,L,C,HL2, HLC3, OHLC4, HLCC4], inline="lo", group=g1, display=display.none)
+
+// Average of Anchors
+shoMid = input.bool(true, "Avg. of Anchors     ", "The mean (average) between the high and low anchored VWAP's", inline="mid", group=g1, display=display.none)
+midClr = input.color(color.new(clr1, 50), "", inline="mid", group=g1, display=display.none)
+mWidth = input.int(2, "", 1, inline="mid", group=g1, display=display.none)
+
+// Quarter levels
+shoQrt = input.bool(false, "Quarter Values       ", "The median (middle) value between the mean (average) and high / low anchors.", inline="quarter", group=g1, display=display.none)
+qrtClr = input.color(color.new(clr1, 80), "", inline="quarter", group=g1, display=display.none)
+qWidth = input.int(1,"", 1, inline="quarter", group=g1, display=display.none)
+
+// High eighth levels with fill
+shoHiFil = input.bool(true, "High Interim Bands",  inline="hiFill", group=g1, display=display.none)
+hiEthClr = input.color(color.new(clr1, 93), "", inline="hiFill", group=g1, display=display.none)
+hiFilClr = input.color(color.new(clr1, 97), "", inline="hiFill", group=g1, display=display.none)
+
+// Low eighth levels with fill
+shoLoFil = input.bool(true, "Low Interim Bands ",  inline="loFill", group=g1, display=display.none)
+loEthClr = input.color(color.new(clr1, 93), "", inline="loFill", group=g1, display=display.none)
+loFilClr = input.color(color.new(clr1, 97), "", inline="loFill", group=g1, display=display.none)
+
+// Smooth Average of Anchors
+shoMA = input.bool(false, "Smooth Average    ", inline="smooth", group=g1, display=display.none)
+maTyp = input.string("SMMA (RMA)", "", ["SMA", "EMA", "SMMA (RMA)", "WMA", "VWMA", "Linear Regression"], inline="smooth", group=g1, display=display.none)
+maLen = input.int(3, "", 1, inline="smooth", group=g1, display=display.none)
+
+// Anchor Reset Settings
+sessionLimited = input.bool(true, "Limit anchor session continuation to ", "Defines when a given anchor should be reset if its VWAP has not been broken, measured in sessions.", inline="reset", group=g1, display=display.none)
+anchorMax = input.int(1, "", 1, inline="reset", group=g1, display=display.none)
+mktHrsOnly = input.bool(false, "Limit anchor resets to Regular Trading Hours & New Sessions", "Prevents a given VWAP from resetting after hours, overnight, or during the premarket.", group=g1, display=display.none)
+
+// High / Low Anchor Labels
+hiLoLabels = input.bool(true, "Label: High & Low anchor", group=g1, display=display.none)
+avgLabel = input.bool(true, "Label: Avg. of anchors", group=g1, display=display.none)
+
+// 1 Day VWAP
+shoVWAP = input.bool(true, "Day 1", "Line color and width of Day 1 VWAP.", inline="vwap", group=g2, display=display.none)
+vwap1Clr = input.color(color.blue, "", inline="vwap", group=g2, display=display.none)
+vWidth1 = input.int(2, "", 1, inline="vwap", group=g2, display=display.none)
+label1 = input.bool(true, "Label", inline="vwap", group=g2, display=display.none)
+
+// 2 Day VWAP
+shoDay2 = input.bool(false, "Day 2", "Line color and width of Day 2 VWAP.", inline="vwap2", group=g2, display=display.none)
+vwap2Clr = input.color(color.yellow, "", inline="vwap2", group=g2, display=display.none)
+vWidth2 = input.int(2, "", 1, inline="vwap2", group=g2, display=display.none)
+label2 = input.bool(true, "Label", inline="vwap2", group=g2, display=display.none)
+
+// 3 Day VWAP
+shoDay3 = input.bool(false, "Day 3", "Line color and width of Day 3 VWAP.", inline="vwap3", group=g2, display=display.none)
+vwap3Clr = input.color(color.rgb(233, 30, 100), "", inline="vwap3", group=g2, display=display.none)
+vWidth3 = input.int(2, "", 1, inline="vwap3", group=g2, display=display.none)
+label3 = input.bool(true, "Label", inline="vwap3", group=g2, display=display.none)
+
+// General VWAP Settings
+const string cc1 = "Session", const string cc2 = "Anchor"
+source1 = input.string(HLC3, "VWAP Source        ", [O,H,L,C,HL2, HLC3, OHLC4, HLCC4], inline = "vwapSource", group=g2, display=display.none)
+clrMode = input.string(cc1, "Color Cycling         ", [cc1, cc2], "\"" + cc1 + "\" keeps colors consistent across sessions, where the D1 VWAP will always have it's specified color, D2 it's specified color, and D3 it's specified color.\n\n\"" + cc2 + "\" keeps colors consistent across anchors, where a given anchor will have the same color across sessions. Colors are cycled in this mode, so D1 VWAP will have a different color every day.", inline="vwapCycle", group=g2, display=display.none)
+
+// Time Weighted Average
+shoTWAP = input.bool(false, "", "Color and width of the TWAP.", inline="lr", group=g3, display=display.none)
+twapTyp = input.string("Linear Regression", "", ["SMA", "WMA", "VWMA", "Linear Regression"], inline="lr", group=g3, display=display.none)
+twapClr = input.color(color.orange, "", inline="lr", group=g3, display=display.none)
+twapWid = input.int(2, "", 1, inline="lr", group=g3, display=display.none)
+twapLbl = input.bool(true, "Label", inline="lr", group=g3, display=display.none)
+twapDir = input.bool(false, "Directional colors              ", "When enabled, plots with negative slopes will inherit this opacity, where \"100\" is the full color value, and \"0\" is transparent.", inline="lr2", group=g3, display=display.none)
+twapTrp = input.int(50, "", 0, 100, 1, inline="lr2", group=g3, display=display.none)
+twapLen = input.int(1440, "Max Length  ", 2, inline="lr3", group=g3, display=display.none)
+twapSes = input.string("Session", "", ["Session", "Perpetual"], inline="lr3", group=g3, display=display.none)
+twapSrc = input.string(HLC3, "Source          ", [O,H,L,C,HL2, HLC3, OHLC4, HLCC4], inline="lr4", group=g3, display=display.none)
+
+// Market Hours Settings
+mktHrs = input.session("0930-1600", "Start / End Time", tooltip = "A 24 hour format, where 0930 is 9:30 AM, 1600 is 4:00 PM, etc.", inline="mkt", group=g4, display=display.none)
+zone = input("America/New_York", "Time Zone          ", "Any IANA time zone ID. Ex: America/New_York\n\nYou can also use \"syminfo.timezone\", which inherits the time zone of the exchange of the chart.", inline="zone", group=g4, display=display.none)
+var timezone = zone == "syminfo.timezone" ? syminfo.timezone : zone
+const string minutesInDay = "1440", marketHours = not na(time(minutesInDay, mktHrs, timezone))
+// }
+
+
+// ------------------------------------------------------ CORE ------------------------------------------------------ {
+
+// Put colors into an array
+var colors = array.from(hiAnClr, loAnClr, midClr, qrtClr, hiEthClr, loEthClr, hiFilClr, loFilClr, vwap1Clr, vwap2Clr, vwap3Clr)
+var vwapClrs = array.from(vwap1Clr, vwap2Clr, vwap3Clr)
+
+// Initialize Labels
+var showLbls = array.from(shoVWAP and label1, shoDay2 and label2, shoDay3 and label3, shoHiA and hiLoLabels, shoLoA and hiLoLabels, shoMid and avgLabel, shoTWAP and twapLbl)
+var labels = array.new_label(showLbls.size())
+if barstate.isfirst and showLbls.includes(true)
+    for [i, show] in showLbls
+        if show
+            Text = "← " + (i < 3 ? "Day " + str.tostring(i + 1) : i < 4 ? "High Anchor" : i < 5 ? "Low Anchor" : i < 6 ? "Avg. of Anchors" : "TWAP")
+            labels.set(i, label.new(time, open, Text, xloc.bar_time, yloc.price, none, label.style_label_left, chart.fg_color, size.normal, text.align_left))
+
+// Define and count new sessions
+newSession = timeframe.isdwm ? false : session.isfirstbar
+var sessionCount = 0
+
+// Set core variables
+o = open, h = high, l = low, c = close, index = bar_index
+
+// Define candle patterns and parts
+candleBody = math.abs( c - o )
+rising = c > o
+falling = o > c
+upWick = rising ? h - c : h - o
+dnWick = falling ? c - l : o - l
+doji = (upWick >= candleBody or dnWick >= candleBody) and (h != o and h != c and l != o and l != c)
+
+// Anchor variables
+var hi = h, var lo = l, var anchoredHi = h, var anchoredLo = l, var hrH = h, var hrL = l, var lrH = h, var lrL = l
+var resetHiAnchor = false, var resetLoAnchor = false, var bullish = false, var bearish = false
+var hiSessionCount = 0, var loSessionCount = 0
+
+// Logic for what qualifies as "breaking" the previous anchors
+breakingHigher = rising  and (c > hi or (c[1] > anchoredHi and c > h[1] and o > anchoredHi and not doji))
+breakingLower  = falling and (c < lo or (c[1] < anchoredLo and c < l[1] and o < anchoredLo and not doji))
+
+// Logic for when to reset anchors
+if newSession and sessionLimited
+    hiSessionCount += 1, loSessionCount += 1
+    if hiSessionCount == anchorMax
+        hiSessionCount := 0
+        hi := h, hrH := h, hrL := l
+        resetHiAnchor := true
+        bullish := true
+    if loSessionCount == anchorMax
+        loSessionCount := 0
+        lo := l, lrH := h, lrL := l
+        resetLoAnchor := true
+        bearish := true
+else if breakingHigher and (not mktHrsOnly or (marketHours and marketHours))
+    hiSessionCount := 0
+    hi := h, hrH := h, hrL := l
+    resetHiAnchor := true
+    bullish := true
+else if breakingLower and (not mktHrsOnly or (marketHours and marketHours))
+    loSessionCount := 0
+    lo := l, lrH := h, lrL := l
+    resetLoAnchor := true
+    bearish := true
+else
+    resetHiAnchor := false
+    resetLoAnchor := false
+
+// Function to get a price
+price(s) => util.source(s, o, h, l, c)
+
+// Set the Anchored VWAPs and their average
+anchoredHi := ta.vwap(price(hiAvg), resetHiAnchor)
+anchoredLo := ta.vwap(price(loAvg), resetLoAnchor)
+anchoredMean = util.lerp(anchoredLo, anchoredHi, 0.5)
+
+maSeries(string avgType, float price, series int length) =>
+    switch avgType
+        "SMA" => ta.sma(price, length)
+        "WMA" => ta.wma(price, length)
+        "VWMA" => ta.vwma(price, length)
+        "Linear Regression" => ta.linreg(price, length, 0)
+
+maSimple(string avgType, float price, simple int length) =>
+    switch avgType
+        "EMA" => ta.ema(price, length)
+        "SMMA (RMA)" => ta.rma(price, length)
+
+// Smooth the average according to the traders settings
+if shoMA
+    Simple = maTyp == "EMA" or maTyp == "SMMA (RMA)"
+    anchoredMean := Simple
+     ? maSimple(maTyp, anchoredMean, maLen)
+     : maSeries(maTyp, anchoredMean, maLen)
+
+// Set the interim values
+avg12 = util.lerp(anchoredLo, anchoredMean, 0.25)
+avg25 = util.lerp(anchoredLo, anchoredMean, 0.5)
+avg37 = util.lerp(anchoredLo, anchoredMean, 0.75)
+avg62 = util.lerp(anchoredMean, anchoredHi, 0.25)
+avg75 = util.lerp(anchoredMean, anchoredHi, 0.5)
+avg87 = util.lerp(anchoredMean, anchoredHi, 0.75)
+
+// Initialize array to track daily VWAPs (up to 3 days)
+var vwap = array.new_float(9, 0)
+
+// Reset daily VWAP values
+if newSession
+    sessionCount += 1
+    for i = 0 to 2
+        vwap.unshift(0), vwap.pop()
+
+// Set VWAP values
+// https://www.tradingview.com/support/solutions/43000502018-volume-weighted-average-price-vwap/
+vwap.set(1, vwap.get(1) + volume * price(source1))
+vwap.set(2, vwap.get(2) + volume)
+for i = 0 to 2
+    prc = 0., vol = 0.
+    for j = 0 to i
+        prc += vwap.get(j * 3 + 1)
+        vol += vwap.get(j * 3 + 2)
+    vwap.set(i * 3, prc / vol)
+
+// Set TWAP length
+var twapLength = 1
+if twapSes == "Session" and newSession
+    twapLength := 1
+else if twapLength < twapLen and bar_index != 0
+    twapLength += 1
+
+// Set TWAP value
+twap = maSeries(twapTyp, price(twapSrc), twapLength)
+if twapLength == 1
+    twap := price(twapSrc)
+
+// Function defining abnormal candle move continuation
+moveCont(d) =>
+    switch d
+        "up" => anchoredHi >= anchoredHi[1] or hlcc4 > avg87
+        "dn" => anchoredLo <= anchoredLo[1] or hlcc4 < avg12
+
+// Function defining candle consolidation relative to the previous anchor
+consolidating(d, resetHi, resetLo) => doji or (o <= resetHi and c <= resetHi and o >= resetLo and c >= resetLo)
+
+// Set the plot and fill colors
+var clr = array.new_color(colors.size())
+for i = 0 to colors.size() - 1
+    _c_ = colors.get(i)
+    ifTrue = switch i
+        0 => bullish and (resetHiAnchor or moveCont("up") or consolidating("up", hrH, hrL))
+        1 => bearish and (resetLoAnchor or moveCont("dn") or consolidating("dn", lrH, lrL))
+        => false
+    clr.set(i, newSession ? none : ifTrue ? util.fade(_c_, 0.25) : _c_)
+
+// Toggle the colors reset to be false if it has been reset back to the user specified color
+bullish := clr.get(0) == hiAnClr ? false : bullish
+bearish := clr.get(1) == loAnClr ? false : bearish
+// }
+
+
+// ----------------------------------------------------- PLOTS ------------------------------------------------------ {
+
+// Plot helpers
+displayPlot(ifTrue) => ifTrue ? display.pane : display.none
+displayFill(ifTrue) => ifTrue ? display.all : display.none
+vwapDay(day) => vwap.get((day + 1) * 3 - 3)
+var showVWAPs = array.from(shoVWAP, shoDay2, shoDay3)
+vwapClr(day) =>
+    i = day - (clrMode == cc2 ? sessionCount % 3 : 0)
+    newSession or not showVWAPs.get(day) ? na : vwapClrs.get(i < 0 ? i + 3 : i)
+
+// Plot VWAP
+plot(vwapDay(0), "Day 1 VWAP", vwapClr(0), vWidth1, plot.style_linebr, editable = false, display = displayPlot(shoVWAP))
+plot(vwapDay(1), "Day 2 VWAP", vwapClr(1), vWidth2, plot.style_linebr, editable = false, display = displayPlot(shoDay2))
+plot(vwapDay(2), "Day 3 VWAP", vwapClr(2), vWidth3, plot.style_linebr, editable = false, display = displayPlot(shoDay3))
+
+// Plot TWAP
+twapColor = session.isfirstbar and not timeframe.isdwm ? na : twap > twap[1] or not twapDir ? twapClr : util.fade(twapClr, twapTrp / 100)
+plot(twap, "TWAP", twapColor, 2, plot.style_linebr, false, 0, 0, false, false, display = shoTWAP ? display.pane : display.none)
+
+// Plot the top, bottom, and average anchor values
+top = plot(anchoredHi, "High Anchor", clr.get(0), hiWidth, plot.style_linebr, editable = false, display = displayPlot(shoHiA))
+bot = plot(anchoredLo, "Low Anchor",  clr.get(1), loWidth, plot.style_linebr, editable = false, display = displayPlot(shoLoA))
+mid = plot(anchoredMean, "Average of Anchors", clr.get(2), mWidth, plot.style_linebr, editable = false, display = displayPlot(shoMid))
+
+// Plot 1/4 values (half way between average and anchor)
+var showQuarters = displayPlot(shoQrt)
+t25 = plot(avg75, "Top 25% Line",    clr.get(3), qWidth, plot.style_linebr, editable = false, display = showQuarters)
+b25 = plot(avg25, "Bottom 25% Line", clr.get(3), qWidth, plot.style_linebr, editable = false, display = showQuarters)
+
+// Plot 1/8 lines
+var showHideTopLine = displayPlot(shoHiFil)
+var showHideBotLine = displayPlot(shoLoFil)
+t12  = plot(avg87, "Top 12.5% Line",    clr.get(4), 1, plot.style_linebr, editable = false, display = showHideTopLine)
+t252 = plot(avg75, "Top 25% Line",      clr.get(4), 1, plot.style_linebr, editable = false, display = showHideTopLine)
+t37  = plot(avg62, "Top 37.5% Line",    clr.get(4), 1, plot.style_linebr, editable = false, display = showHideTopLine)
+b37  = plot(avg37, "Bottom 37.5% Line", clr.get(5), 1, plot.style_linebr, editable = false, display = showHideBotLine)
+b252 = plot(avg25, "Bottom 25% Line",   clr.get(5), 1, plot.style_linebr, editable = false, display = showHideBotLine)
+b12  = plot(avg12, "Bottom 12.5% Line", clr.get(5), 1, plot.style_linebr, editable = false, display = showHideBotLine)
+
+// Plot 1/8 fills
+var showHideTopFill = displayFill(shoHiFil)
+var showHideBotFill = displayFill(shoLoFil)
+fill(top, t12, clr.get(6), "Top 12.5% Fill",    false, display = showHideTopFill)
+fill(top, t25, clr.get(6), "Top 25% Fill",      false, display = showHideTopFill)
+fill(top, t37, clr.get(6), "Top 37.5% Fill",    false, display = showHideTopFill)
+fill(bot, b37, clr.get(7), "Bottom 37.5% Fill", false, display = showHideBotFill)
+fill(bot, b25, clr.get(7), "Bottom 25% Fill",   false, display = showHideBotFill)
+fill(bot, b12, clr.get(7), "Bottom 12.5% Fill", false, display = showHideBotFill)
+
+// Update Labels
+label_y = array.from(vwap.get(0), vwap.get(3), vwap.get(6), anchoredHi, anchoredLo, anchoredMean, twap)
+label_c = array.from(vwapClr(0), vwapClr(1), vwapClr(2), clr.get(0), clr.get(1), clr.get(2), twapColor)
+for [i, lbl] in labels
+    if not na(lbl)
+        y = label_y.get(i)
+        lbl.set_xy(time, y)
+        lbl.set_textcolor(label_c.get(i))
+        lbl.set_tooltip(str.substring(" " + lbl.get_text(), 2) + " @ " + str.tostring(math.round_to_mintick(y)) + " ")
+// }
