@@ -506,16 +506,14 @@ for [i, lbl] in labels
         lbl.set_textcolor(label_c.get(i))
         lbl.set_tooltip(str.substring(" " + lbl.get_text(), 2) + " @ " + str.tostring(math.round_to_mintick(y)) + " ")
 
-// --- Signal Plots (2 plotshape calls: 1 buy + 1 sell) ---
-// Buy: triangle for crossover, diamond for mean reversion; both signals get larger triangle
-buyShape = crossBuy and meanBuy ? shape.arrowup : meanBuy ? shape.diamond : shape.triangleup
-buySize = crossBuy and meanBuy ? size.normal : size.small
-plotshape(buySignal, "Buy Signal", buyShape, location.belowbar, sigBuyClr, size=buySize, display=displayPlot(shoSignals))
+// --- Signal Markers (using labels to avoid plot limit and series shape/size restriction) ---
+if shoSignals and buySignal
+    buyText = crossBuy and meanBuy ? "BUY+" : meanBuy ? "MR-B" : "BUY"
+    label.new(bar_index, l, buyText, xloc.bar_index, yloc.price, sigBuyClr, label.style_label_up, color.white, size.small)
 
-// Sell: triangle for crossover, diamond for mean reversion; both signals get larger triangle
-sellShape = crossSell and meanSell ? shape.arrowdown : meanSell ? shape.diamond : shape.triangledown
-sellSize = crossSell and meanSell ? size.normal : size.small
-plotshape(sellSignal, "Sell Signal", sellShape, location.abovebar, sigSellClr, size=sellSize, display=displayPlot(shoSignals))
+if shoSignals and sellSignal
+    sellText = crossSell and meanSell ? "SELL+" : meanSell ? "MR-S" : "SELL"
+    label.new(bar_index, h, sellText, xloc.bar_index, yloc.price, sigSellClr, label.style_label_down, color.white, size.small)
 
 // --- TP/SL Level Drawing (using lines instead of plot to save plot calls) ---
 var line tpLine = na, var line slLine = na, var line entryLine = na
