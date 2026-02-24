@@ -506,29 +506,50 @@ for [i, lbl] in labels
         lbl.set_textcolor(label_c.get(i))
         lbl.set_tooltip(str.substring(" " + lbl.get_text(), 2) + " @ " + str.tostring(math.round_to_mintick(y)) + " ")
 
-// --- Signal Plots ---
-// Buy signal markers
-plotshape(buySignal and isCrossBuy, "Buy (Crossover)", shape.triangleup, location.belowbar, sigBuyClr, size=size.small, display=displayPlot(shoSignals))
-plotshape(buySignal and isMeanBuy, "Buy (Mean Rev)", shape.diamond, location.belowbar, sigBuyClr, size=size.small, display=displayPlot(shoSignals))
-plotshape(buySignal and crossBuy and meanBuy, "Buy (Both)", shape.triangleup, location.belowbar, color.new(sigBuyClr, 0), size=size.normal, display=displayPlot(shoSignals))
+// --- Signal Plots (2 plotshape calls: 1 buy + 1 sell) ---
+// Buy: triangle for crossover, diamond for mean reversion; both signals get larger triangle
+buyShape = crossBuy and meanBuy ? shape.arrowup : meanBuy ? shape.diamond : shape.triangleup
+buySize = crossBuy and meanBuy ? size.normal : size.small
+plotshape(buySignal, "Buy Signal", buyShape, location.belowbar, sigBuyClr, size=buySize, display=displayPlot(shoSignals))
 
-// Sell signal markers
-plotshape(sellSignal and isCrossSell, "Sell (Crossover)", shape.triangledown, location.abovebar, sigSellClr, size=size.small, display=displayPlot(shoSignals))
-plotshape(sellSignal and isMeanSell, "Sell (Mean Rev)", shape.diamond, location.abovebar, sigSellClr, size=size.small, display=displayPlot(shoSignals))
-plotshape(sellSignal and crossSell and meanSell, "Sell (Both)", shape.triangledown, location.abovebar, color.new(sigSellClr, 0), size=size.normal, display=displayPlot(shoSignals))
+// Sell: triangle for crossover, diamond for mean reversion; both signals get larger triangle
+sellShape = crossSell and meanSell ? shape.arrowdown : meanSell ? shape.diamond : shape.triangledown
+sellSize = crossSell and meanSell ? size.normal : size.small
+plotshape(sellSignal, "Sell Signal", sellShape, location.abovebar, sigSellClr, size=sellSize, display=displayPlot(shoSignals))
 
-// --- TP/SL Level Plots ---
-tpLevel = shoTPSL and activeDir != 0 ? activeTP : na
-slLevel = shoTPSL and activeDir != 0 ? activeSL : na
-entryLevel = shoTPSL and activeDir != 0 ? activeEntry : na
+// --- TP/SL Level Drawing (using lines instead of plot to save plot calls) ---
+var line tpLine = na, var line slLine = na, var line entryLine = na
+var label tpLbl = na, var label slLbl = na
 
-plot(tpLevel, "Take Profit", tpClr, 1, plot.style_linebr, editable=false, display=displayPlot(shoTPSL))
-plot(slLevel, "Stop Loss", slClr, 1, plot.style_linebr, editable=false, display=displayPlot(shoTPSL))
-plot(entryLevel, "Entry", color.new(color.gray, 50), 1, plot.style_linebr, editable=false, display=displayPlot(shoTPSL))
+if shoTPSL
+    if buySignal or sellSignal
+        // Clean up previous lines/labels
+        if not na(tpLine)
+            line.delete(tpLine), line.delete(slLine), line.delete(entryLine)
+            label.delete(tpLbl), label.delete(slLbl)
+        // Draw new TP/SL/Entry lines
+        entryLine := line.new(bar_index, activeEntry, bar_index + 1, activeEntry, color=color.new(color.gray, 50), style=line.style_dashed, width=1)
+        tpLine := line.new(bar_index, activeTP, bar_index + 1, activeTP, color=tpClr, style=line.style_dashed, width=1)
+        slLine := line.new(bar_index, activeSL, bar_index + 1, activeSL, color=slClr, style=line.style_dashed, width=1)
+        tpLbl := label.new(bar_index + 1, activeTP, "TP " + str.tostring(math.round_to_mintick(activeTP)), xloc.bar_index, yloc.price, tpClr, label.style_label_left, color.white, size.tiny)
+        slLbl := label.new(bar_index + 1, activeSL, "SL " + str.tostring(math.round_to_mintick(activeSL)), xloc.bar_index, yloc.price, slClr, label.style_label_left, color.white, size.tiny)
+    else if activeDir != 0 and not na(tpLine)
+        // Extend lines to current bar
+        line.set_x2(tpLine, bar_index), line.set_x2(slLine, bar_index), line.set_x2(entryLine, bar_index)
+        label.set_x(tpLbl, bar_index + 1), label.set_x(slLbl, bar_index + 1)
 
-// TP/SL hit markers
-plotshape(tpHit and activeDir != 0 and shoTPSL, "TP Hit", shape.xcross, location.absolute, tpClr, size=size.tiny, display=displayPlot(shoTPSL))
-plotshape(slHit and activeDir != 0 and shoTPSL, "SL Hit", shape.xcross, location.absolute, slClr, size=size.tiny, display=displayPlot(shoTPSL))
+    // TP/SL hit markers (using labels instead of plotshape)
+    if tpHit and activeDir != 0
+        label.new(bar_index, activeTP, "TP", xloc.bar_index, yloc.price, tpClr, label.style_xcross, color.white, size.tiny)
+    if slHit and activeDir != 0
+        label.new(bar_index, activeSL, "SL", xloc.bar_index, yloc.price, slClr, label.style_xcross, color.white, size.tiny)
+
+    // Clear lines when position is closed
+    if activeDir == 0 and not na(tpLine)
+        line.delete(tpLine), line.delete(slLine), line.delete(entryLine)
+        label.delete(tpLbl), label.delete(slLbl)
+        tpLine := na, slLine := na, entryLine := na
+        tpLbl := na, slLbl := na
 // }
 
 
