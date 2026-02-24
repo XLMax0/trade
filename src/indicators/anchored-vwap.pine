@@ -1,13 +1,12 @@
 // This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
 // © liquid-trader
 
-// This script plots, and auto-updates, 3 separate VWAPs: a traditional VWAP, a VWAP anchored to a trends high,
-// and another anchored to a trends low. Because VWAP is a prominent market maker tool for executing large trades,
-// day traders can use it to better anticipate trends, mean reversion, and breakouts.
-// More here: https://www.tradingview.com/script/72stxVxI-Anchored-VWAP-Auto-High-Low/
+// Enhanced version: Adds Buy/Sell signals (Crossover + Mean Reversion), hybrid TP/SL (VWAP bands + ATR),
+// detailed statistics panel, and alert conditions to the original Anchored VWAP indicator.
+// Original: https://www.tradingview.com/script/72stxVxI-Anchored-VWAP-Auto-High-Low/
 
 //@version=6
-indicator("Anchored VWAP (Auto High & Low)", "AVWAP (Auto Hi / Lo)", overlay=true, max_bars_back=0)
+indicator("AVWAP Trading System", "AVWAP Trading System", overlay=true, max_bars_back=0, max_labels_count=500, max_lines_count=500)
 import liquid-trader/UtilityLibrary/5 as util
 
 
@@ -17,7 +16,7 @@ import liquid-trader/UtilityLibrary/5 as util
 const color none = color.new(color.black, 100), const color clr1 = color.aqua
 
 // Groups & Average Types
-const string g1 = "High / Low Anchored VWAP", const string g2 = "Daily VWAP", const string g3 = "Time Weighted Average Price", const string g4 = "Market Hours", const string O = "open", const string H = "high", const string L = "low", const string C = "close", const string HL2 = "hl2", const string HLC3 = "hlc3", const string OHLC4 = "ohlc4", const string HLCC4 = "hlcc4"
+const string g1 = "High / Low Anchored VWAP", const string g2 = "Daily VWAP", const string g3 = "Time Weighted Average Price", const string g4 = "Market Hours", const string g5 = "Signals", const string g6 = "Take Profit / Stop Loss", const string g7 = "Statistics Panel", const string O = "open", const string H = "high", const string L = "low", const string C = "close", const string HL2 = "hl2", const string HLC3 = "hlc3", const string OHLC4 = "ohlc4", const string HLCC4 = "hlcc4"
 
 // High Anchor
 shoHiA = input.bool(true, "High Anchor           ", "VWAP anchored and weighted to trend highs.", inline="hi", group=g1, display=display.none)
@@ -105,6 +104,31 @@ mktHrs = input.session("0930-1600", "Start / End Time", tooltip = "A 24 hour for
 zone = input("America/New_York", "Time Zone          ", "Any IANA time zone ID. Ex: America/New_York\n\nYou can also use \"syminfo.timezone\", which inherits the time zone of the exchange of the chart.", inline="zone", group=g4, display=display.none)
 var timezone = zone == "syminfo.timezone" ? syminfo.timezone : zone
 const string minutesInDay = "1440", marketHours = not na(time(minutesInDay, mktHrs, timezone))
+
+// ---- Signal Settings ----
+const string SIG_CROSS = "Crossover", const string SIG_MEAN = "Mean Reversion", const string SIG_BOTH = "Both"
+shoSignals = input.bool(true, "Enable Signals       ", "Show Buy/Sell signal markers on the chart.", inline="sigEn", group=g5, display=display.none)
+sigMode = input.string(SIG_BOTH, "Signal Mode            ", [SIG_CROSS, SIG_MEAN, SIG_BOTH], "Crossover: signals when price crosses VWAP levels.\nMean Reversion: signals when price reverses from extremes.\nBoth: shows all signals.", inline="sigMode", group=g5, display=display.none)
+sigBuyClr = input.color(color.lime, "Buy Color   ", inline="sigClr", group=g5, display=display.none)
+sigSellClr = input.color(color.red, "Sell Color", inline="sigClr", group=g5, display=display.none)
+sigMktHrs = input.bool(false, "Signals only during Market Hours", "When enabled, signals only fire during regular trading hours.", group=g5, display=display.none)
+sigCooldown = input.int(3, "Min bars between signals  ", 1, 50, 1, "Minimum number of bars between consecutive signals to reduce noise.", group=g5, display=display.none)
+
+// ---- Take Profit / Stop Loss Settings ----
+shoTPSL = input.bool(true, "Show TP/SL Levels   ", "Display Take Profit and Stop Loss levels on chart.", inline="tpslEn", group=g6, display=display.none)
+tpClr = input.color(color.new(color.lime, 30), "TP Color   ", inline="tpslClr", group=g6, display=display.none)
+slClr = input.color(color.new(color.red, 30), "SL Color", inline="tpslClr", group=g6, display=display.none)
+atrPeriod = input.int(14, "ATR Period              ", 1, 100, 1, "Period for ATR calculation used in TP/SL.", inline="atrP", group=g6, display=display.none)
+atrTPMult = input.float(2.0, "ATR TP Multiplier    ", 0.5, 10.0, 0.1, "ATR multiplier for Take Profit when VWAP band target is not available.", inline="atrTP", group=g6, display=display.none)
+atrSLMult = input.float(1.5, "ATR SL Multiplier    ", 0.5, 10.0, 0.1, "ATR multiplier for Stop Loss.", inline="atrSL", group=g6, display=display.none)
+tpslStyle = input.string("Lines", "Display Style            ", ["Lines", "Labels", "Both"], inline="tpslSty", group=g6, display=display.none)
+
+// ---- Statistics Panel Settings ----
+shoStats = input.bool(true, "Show Statistics Panel", "Display detailed trading statistics table.", inline="statEn", group=g7, display=display.none)
+statPos = input.string("Top Right", "Position                  ", ["Top Left", "Top Right", "Bottom Left", "Bottom Right"], inline="statPos", group=g7, display=display.none)
+statSize = input.string("small", "Text Size                ", ["tiny", "small", "normal"], inline="statSz", group=g7, display=display.none)
+statBgClr = input.color(color.new(color.black, 80), "Background  ", inline="statBg", group=g7, display=display.none)
+statTxtClr = input.color(color.white, "Text Color", inline="statBg", group=g7, display=display.none)
 // }
 
 
@@ -266,6 +290,162 @@ bearish := clr.get(1) == loAnClr ? false : bearish
 // }
 
 
+// --------------------------------------------------- SIGNALS ------------------------------------------------------ {
+
+// ATR for TP/SL calculations
+atrValue = ta.atr(atrPeriod)
+
+// Track bars since last signal for cooldown
+var int barsSinceSignal = 999
+
+// Signal conditions - check market hours filter
+mktFilter = not sigMktHrs or marketHours
+cooldownOk = barsSinceSignal >= sigCooldown
+
+// --- Crossover Signals ---
+// Buy: price crosses above anchored mean (average of high/low VWAP)
+// Sell: price crosses below anchored mean
+crossBuyRaw = ta.crossover(c, anchoredMean) and mktFilter
+crossSellRaw = ta.crossunder(c, anchoredMean) and mktFilter
+
+// --- Mean Reversion Signals ---
+// Buy: price was at or below low anchor zone, then closes back above avg12 (reversal from low)
+// Sell: price was at or above high anchor zone, then closes back below avg87 (reversal from high)
+meanRevBuyRaw = c[1] <= anchoredLo and c > avg12 and rising and mktFilter
+meanRevSellRaw = c[1] >= anchoredHi and c < avg87 and falling and mktFilter
+
+// Combine signals based on mode
+crossBuy = (sigMode == SIG_CROSS or sigMode == SIG_BOTH) and crossBuyRaw and cooldownOk
+crossSell = (sigMode == SIG_CROSS or sigMode == SIG_BOTH) and crossSellRaw and cooldownOk
+meanBuy = (sigMode == SIG_MEAN or sigMode == SIG_BOTH) and meanRevBuyRaw and cooldownOk
+meanSell = (sigMode == SIG_MEAN or sigMode == SIG_BOTH) and meanRevSellRaw and cooldownOk
+
+// Final combined signals (avoid duplicate on same bar)
+buySignal = shoSignals and (crossBuy or meanBuy)
+sellSignal = shoSignals and (crossSell or meanSell) and not buySignal
+
+// Update cooldown counter
+barsSinceSignal := buySignal or sellSignal ? 0 : barsSinceSignal + 1
+
+// Determine signal type for labeling
+isCrossBuy = crossBuy and not meanBuy
+isMeanBuy = meanBuy and not crossBuy
+isCrossSell = crossSell and not meanSell
+isMeanSell = meanSell and not crossSell
+
+// --- Hybrid TP/SL Calculation ---
+// For Buy signals: TP1 = next VWAP band up (avg75 or anchoredHi), TP2 = ATR-based; SL = ATR-based or low anchor
+// For Sell signals: TP1 = next VWAP band down (avg25 or anchoredLo), TP2 = ATR-based; SL = ATR-based or high anchor
+
+var float activeTP = na
+var float activeSL = na
+var float activeEntry = na
+var int activeDir = 0  // 1 = long, -1 = short, 0 = flat
+
+// Calculate TP/SL on new signals
+if buySignal
+    activeEntry := c
+    activeDir := 1
+    // TP: Use next VWAP band above entry, fallback to ATR
+    vwapTP = c < avg62 ? avg62 : c < avg75 ? avg75 : c < avg87 ? avg87 : c < anchoredHi ? anchoredHi : na
+    atrTP = c + atrValue * atrTPMult
+    activeTP := not na(vwapTP) ? math.max(vwapTP, c + atrValue * 0.5) : atrTP
+    // SL: ATR-based with VWAP band floor
+    atrSL = c - atrValue * atrSLMult
+    vwapSL = c > avg25 ? avg25 : c > avg12 ? avg12 : c > anchoredLo ? anchoredLo : na
+    activeSL := not na(vwapSL) ? math.min(math.max(vwapSL, atrSL), c - atrValue * 0.3) : atrSL
+
+if sellSignal
+    activeEntry := c
+    activeDir := -1
+    // TP: Use next VWAP band below entry, fallback to ATR
+    vwapTP = c > avg37 ? avg37 : c > avg25 ? avg25 : c > avg12 ? avg12 : c > anchoredLo ? anchoredLo : na
+    atrTP = c - atrValue * atrTPMult
+    activeTP := not na(vwapTP) ? math.min(vwapTP, c - atrValue * 0.5) : atrTP
+    // SL: ATR-based with VWAP band ceiling
+    atrSL = c + atrValue * atrSLMult
+    vwapSL = c < avg75 ? avg75 : c < avg87 ? avg87 : c < anchoredHi ? anchoredHi : na
+    activeSL := not na(vwapSL) ? math.max(math.min(vwapSL, atrSL), c + atrValue * 0.3) : atrSL
+
+// Check if TP or SL was hit
+tpHit = activeDir == 1 ? (h >= activeTP) : activeDir == -1 ? (l <= activeTP) : false
+slHit = activeDir == 1 ? (l <= activeSL) : activeDir == -1 ? (h >= activeSL) : false
+
+// --- Statistics Tracking ---
+var int totalTrades = 0
+var int totalWins = 0
+var int totalLosses = 0
+var int longTrades = 0
+var int longWins = 0
+var int shortTrades = 0
+var int shortWins = 0
+var float totalProfit = 0.0
+var float totalLoss = 0.0
+var float grossProfit = 0.0
+var float grossLoss = 0.0
+var float maxDrawdown = 0.0
+var float peakEquity = 0.0
+var float currentEquity = 0.0
+var int consecWins = 0
+var int consecLosses = 0
+var int maxConsecWins = 0
+var int maxConsecLosses = 0
+var float sumReturns = 0.0
+var float sumReturnsSq = 0.0
+
+// Close trade on TP/SL hit or opposite signal
+tradeClose = (activeDir != 0) and (tpHit or slHit or (activeDir == 1 and sellSignal) or (activeDir == -1 and buySignal))
+
+if tradeClose and activeDir != 0
+    float pnl = 0.0
+    if activeDir == 1
+        pnl := tpHit ? (activeTP - activeEntry) : slHit ? (activeSL - activeEntry) : (c - activeEntry)
+    else
+        pnl := tpHit ? (activeEntry - activeTP) : slHit ? (activeEntry - activeSL) : (activeEntry - c)
+
+    pctReturn = activeEntry != 0 ? pnl / activeEntry * 100 : 0.0
+    totalTrades += 1
+
+    if activeDir == 1
+        longTrades += 1
+    else
+        shortTrades += 1
+
+    if pnl > 0
+        totalWins += 1
+        grossProfit += pnl
+        consecWins += 1
+        consecLosses := 0
+        maxConsecWins := math.max(maxConsecWins, consecWins)
+        if activeDir == 1
+            longWins += 1
+        else
+            shortWins += 1
+    else if pnl < 0
+        totalLosses += 1
+        grossLoss += math.abs(pnl)
+        consecLosses += 1
+        consecWins := 0
+        maxConsecLosses := math.max(maxConsecLosses, consecLosses)
+
+    currentEquity += pnl
+    peakEquity := math.max(peakEquity, currentEquity)
+    drawdown = peakEquity - currentEquity
+    maxDrawdown := math.max(maxDrawdown, drawdown)
+
+    sumReturns += pctReturn
+    sumReturnsSq += pctReturn * pctReturn
+
+    // Reset position if TP/SL hit (not if closed by opposite signal which opens new position)
+    if tpHit or slHit
+        if not buySignal and not sellSignal
+            activeDir := 0
+            activeTP := na
+            activeSL := na
+            activeEntry := na
+// }
+
+
 // ----------------------------------------------------- PLOTS ------------------------------------------------------ {
 
 // Plot helpers
@@ -316,7 +496,7 @@ fill(bot, b37, clr.get(7), "Bottom 37.5% Fill", false, display = showHideBotFill
 fill(bot, b25, clr.get(7), "Bottom 25% Fill",   false, display = showHideBotFill)
 fill(bot, b12, clr.get(7), "Bottom 12.5% Fill", false, display = showHideBotFill)
 
-// Update Labels
+// Update VWAP Labels
 label_y = array.from(vwap.get(0), vwap.get(3), vwap.get(6), anchoredHi, anchoredLo, anchoredMean, twap)
 label_c = array.from(vwapClr(0), vwapClr(1), vwapClr(2), clr.get(0), clr.get(1), clr.get(2), twapColor)
 for [i, lbl] in labels
@@ -325,4 +505,133 @@ for [i, lbl] in labels
         lbl.set_xy(time, y)
         lbl.set_textcolor(label_c.get(i))
         lbl.set_tooltip(str.substring(" " + lbl.get_text(), 2) + " @ " + str.tostring(math.round_to_mintick(y)) + " ")
+
+// --- Signal Plots ---
+// Buy signal markers
+plotshape(buySignal and isCrossBuy, "Buy (Crossover)", shape.triangleup, location.belowbar, sigBuyClr, size=size.small, display=displayPlot(shoSignals))
+plotshape(buySignal and isMeanBuy, "Buy (Mean Rev)", shape.diamond, location.belowbar, sigBuyClr, size=size.small, display=displayPlot(shoSignals))
+plotshape(buySignal and crossBuy and meanBuy, "Buy (Both)", shape.triangleup, location.belowbar, color.new(sigBuyClr, 0), size=size.normal, display=displayPlot(shoSignals))
+
+// Sell signal markers
+plotshape(sellSignal and isCrossSell, "Sell (Crossover)", shape.triangledown, location.abovebar, sigSellClr, size=size.small, display=displayPlot(shoSignals))
+plotshape(sellSignal and isMeanSell, "Sell (Mean Rev)", shape.diamond, location.abovebar, sigSellClr, size=size.small, display=displayPlot(shoSignals))
+plotshape(sellSignal and crossSell and meanSell, "Sell (Both)", shape.triangledown, location.abovebar, color.new(sigSellClr, 0), size=size.normal, display=displayPlot(shoSignals))
+
+// --- TP/SL Level Plots ---
+tpLevel = shoTPSL and activeDir != 0 ? activeTP : na
+slLevel = shoTPSL and activeDir != 0 ? activeSL : na
+entryLevel = shoTPSL and activeDir != 0 ? activeEntry : na
+
+plot(tpLevel, "Take Profit", tpClr, 1, plot.style_linebr, editable=false, display=displayPlot(shoTPSL))
+plot(slLevel, "Stop Loss", slClr, 1, plot.style_linebr, editable=false, display=displayPlot(shoTPSL))
+plot(entryLevel, "Entry", color.new(color.gray, 50), 1, plot.style_linebr, editable=false, display=displayPlot(shoTPSL))
+
+// TP/SL hit markers
+plotshape(tpHit and activeDir != 0 and shoTPSL, "TP Hit", shape.xcross, location.absolute, tpClr, size=size.tiny, display=displayPlot(shoTPSL))
+plotshape(slHit and activeDir != 0 and shoTPSL, "SL Hit", shape.xcross, location.absolute, slClr, size=size.tiny, display=displayPlot(shoTPSL))
+// }
+
+
+// --------------------------------------------------- STATISTICS --------------------------------------------------- {
+
+if shoStats and barstate.islast
+    // Calculate derived stats
+    winRate = totalTrades > 0 ? totalWins / totalTrades * 100 : 0.0
+    avgWin = totalWins > 0 ? grossProfit / totalWins : 0.0
+    avgLoss = totalLosses > 0 ? grossLoss / totalLosses : 0.0
+    profitFactor = grossLoss > 0 ? grossProfit / grossLoss : grossProfit > 0 ? 999.99 : 0.0
+    netProfit = grossProfit - grossLoss
+    longWinRate = longTrades > 0 ? longWins / longTrades * 100 : 0.0
+    shortWinRate = shortTrades > 0 ? shortWins / shortTrades * 100 : 0.0
+    shortLosses = shortTrades - shortWins
+    longLosses = longTrades - longWins
+
+    // Sharpe Ratio approximation (using bar returns)
+    meanReturn = totalTrades > 0 ? sumReturns / totalTrades : 0.0
+    variance = totalTrades > 1 ? (sumReturnsSq - sumReturns * sumReturns / totalTrades) / (totalTrades - 1) : 0.0
+    stdDev = math.sqrt(math.max(variance, 0))
+    sharpeRatio = stdDev > 0 ? meanReturn / stdDev : 0.0
+
+    // Table position
+    tblPos = switch statPos
+        "Top Left" => position.top_left
+        "Top Right" => position.top_right
+        "Bottom Left" => position.bottom_left
+        => position.bottom_right
+
+    txtSize = switch statSize
+        "tiny" => size.tiny
+        "small" => size.small
+        => size.normal
+
+    // Create statistics table
+    var tbl = table.new(tblPos, 3, 17, statBgClr, color.new(color.gray, 80), 1, color.new(color.gray, 80), 1)
+
+    // Header
+    table.cell(tbl, 0, 0, "AVWAP Trading Stats", text_color=statTxtClr, text_size=txtSize, bgcolor=color.new(color.blue, 70), text_halign=text.align_center)
+    table.merge_cells(tbl, 0, 0, 2, 0)
+
+    // Column headers
+    table.cell(tbl, 0, 1, "Metric", text_color=statTxtClr, text_size=txtSize, text_halign=text.align_left)
+    table.cell(tbl, 1, 1, "Value", text_color=statTxtClr, text_size=txtSize, text_halign=text.align_right)
+    table.cell(tbl, 2, 1, "", text_color=statTxtClr, text_size=txtSize)
+
+    // Row helper
+    statRow(tblRef, int row, string label, string val, color valClr) =>
+        table.cell(tblRef, 0, row, label, text_color=statTxtClr, text_size=txtSize, text_halign=text.align_left)
+        table.cell(tblRef, 1, row, val, text_color=valClr, text_size=txtSize, text_halign=text.align_right)
+        table.merge_cells(tblRef, 1, row, 2, row)
+
+    // Overall stats
+    statRow(tbl, 2, "Total Trades", str.tostring(totalTrades), statTxtClr)
+    statRow(tbl, 3, "Win / Loss", str.tostring(totalWins) + " / " + str.tostring(totalLosses), statTxtClr)
+    statRow(tbl, 4, "Win Rate", str.tostring(winRate, "#.1") + "%", winRate >= 50 ? color.lime : color.orange)
+    statRow(tbl, 5, "Profit Factor", str.tostring(profitFactor, "#.##"), profitFactor >= 1 ? color.lime : color.red)
+    statRow(tbl, 6, "Net Profit", str.tostring(netProfit, "#.##"), netProfit >= 0 ? color.lime : color.red)
+
+    // Averages
+    statRow(tbl, 7, "Avg Win", str.tostring(avgWin, "#.##"), color.lime)
+    statRow(tbl, 8, "Avg Loss", str.tostring(avgLoss, "#.##"), color.red)
+    rr = avgLoss != 0 ? avgWin / avgLoss : 0.0
+    statRow(tbl, 9, "Avg RR Ratio", str.tostring(rr, "#.##"), rr >= 1 ? color.lime : color.orange)
+
+    // Risk metrics
+    statRow(tbl, 10, "Max Drawdown", str.tostring(maxDrawdown, "#.##"), maxDrawdown > 0 ? color.red : statTxtClr)
+    statRow(tbl, 11, "Sharpe Ratio", str.tostring(sharpeRatio, "#.##"), sharpeRatio >= 1 ? color.lime : sharpeRatio >= 0 ? color.orange : color.red)
+
+    // Streaks
+    statRow(tbl, 12, "Max Consec. Wins", str.tostring(maxConsecWins), color.lime)
+    statRow(tbl, 13, "Max Consec. Losses", str.tostring(maxConsecLosses), color.red)
+
+    // Long/Short breakdown
+    table.cell(tbl, 0, 14, "Long / Short", text_color=statTxtClr, text_size=txtSize, bgcolor=color.new(color.blue, 70), text_halign=text.align_center)
+    table.merge_cells(tbl, 0, 14, 2, 14)
+    statRow(tbl, 15, "Long (W/L)", str.tostring(longWins) + " / " + str.tostring(longLosses) + "  (" + str.tostring(longWinRate, "#.1") + "%)", color.lime)
+    statRow(tbl, 16, "Short (W/L)", str.tostring(shortWins) + " / " + str.tostring(shortLosses) + "  (" + str.tostring(shortWinRate, "#.1") + "%)", color.red)
+// }
+
+
+// ---------------------------------------------------- ALERTS ------------------------------------------------------ {
+
+// Crossover alerts
+alertcondition(crossBuyRaw, "AVWAP Crossover Buy", "AVWAP: Price crossed above average of anchors (Bullish Crossover)")
+alertcondition(crossSellRaw, "AVWAP Crossover Sell", "AVWAP: Price crossed below average of anchors (Bearish Crossover)")
+
+// Mean reversion alerts
+alertcondition(meanRevBuyRaw, "AVWAP Mean Rev Buy", "AVWAP: Price reversed from low anchor zone (Bullish Mean Reversion)")
+alertcondition(meanRevSellRaw, "AVWAP Mean Rev Sell", "AVWAP: Price reversed from high anchor zone (Bearish Mean Reversion)")
+
+// Combined signal alerts
+alertcondition(buySignal, "AVWAP Buy Signal", "AVWAP: Buy Signal triggered")
+alertcondition(sellSignal, "AVWAP Sell Signal", "AVWAP: Sell Signal triggered")
+
+// TP/SL alerts
+alertcondition(tpHit and activeDir == 1, "AVWAP Long TP Hit", "AVWAP: Long Take Profit target reached")
+alertcondition(tpHit and activeDir == -1, "AVWAP Short TP Hit", "AVWAP: Short Take Profit target reached")
+alertcondition(slHit and activeDir == 1, "AVWAP Long SL Hit", "AVWAP: Long Stop Loss triggered")
+alertcondition(slHit and activeDir == -1, "AVWAP Short SL Hit", "AVWAP: Short Stop Loss triggered")
+
+// Anchor reset alerts
+alertcondition(resetHiAnchor, "AVWAP High Anchor Reset", "AVWAP: High anchor has been reset (bullish breakout)")
+alertcondition(resetLoAnchor, "AVWAP Low Anchor Reset", "AVWAP: Low anchor has been reset (bearish breakout)")
 // }
