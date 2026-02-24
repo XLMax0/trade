@@ -534,7 +534,28 @@ plotshape(slHit and activeDir != 0 and shoTPSL, "SL Hit", shape.xcross, location
 
 // --------------------------------------------------- STATISTICS --------------------------------------------------- {
 
-if shoStats and barstate.islast
+// Table position and text size (global scope for var table init)
+statTblPos = switch statPos
+    "Top Left" => position.top_left
+    "Top Right" => position.top_right
+    "Bottom Left" => position.bottom_left
+    => position.bottom_right
+
+statTxtSize = switch statSize
+    "tiny" => size.tiny
+    "small" => size.small
+    => size.normal
+
+// Create statistics table at global scope
+var table statTbl = shoStats ? table.new(statTblPos, 3, 17, statBgClr, color.new(color.gray, 80), 1, color.new(color.gray, 80), 1) : na
+
+// Row helper at global scope (no type annotations needed)
+statRow(tblRef, row, lbl, val, valClr, txtClr, txtSz) =>
+    table.cell(tblRef, 0, row, lbl, text_color=txtClr, text_size=txtSz, text_halign=text.align_left)
+    table.cell(tblRef, 1, row, val, text_color=valClr, text_size=txtSz, text_halign=text.align_right)
+    table.merge_cells(tblRef, 1, row, 2, row)
+
+if shoStats and barstate.islast and not na(statTbl)
     // Calculate derived stats
     winRate = totalTrades > 0 ? totalWins / totalTrades * 100 : 0.0
     avgWin = totalWins > 0 ? grossProfit / totalWins : 0.0
@@ -546,68 +567,47 @@ if shoStats and barstate.islast
     shortLosses = shortTrades - shortWins
     longLosses = longTrades - longWins
 
-    // Sharpe Ratio approximation (using bar returns)
+    // Sharpe Ratio approximation
     meanReturn = totalTrades > 0 ? sumReturns / totalTrades : 0.0
     variance = totalTrades > 1 ? (sumReturnsSq - sumReturns * sumReturns / totalTrades) / (totalTrades - 1) : 0.0
     stdDev = math.sqrt(math.max(variance, 0))
     sharpeRatio = stdDev > 0 ? meanReturn / stdDev : 0.0
 
-    // Table position
-    tblPos = switch statPos
-        "Top Left" => position.top_left
-        "Top Right" => position.top_right
-        "Bottom Left" => position.bottom_left
-        => position.bottom_right
-
-    txtSize = switch statSize
-        "tiny" => size.tiny
-        "small" => size.small
-        => size.normal
-
-    // Create statistics table
-    var tbl = table.new(tblPos, 3, 17, statBgClr, color.new(color.gray, 80), 1, color.new(color.gray, 80), 1)
-
     // Header
-    table.cell(tbl, 0, 0, "AVWAP Trading Stats", text_color=statTxtClr, text_size=txtSize, bgcolor=color.new(color.blue, 70), text_halign=text.align_center)
-    table.merge_cells(tbl, 0, 0, 2, 0)
+    table.cell(statTbl, 0, 0, "AVWAP Trading Stats", text_color=statTxtClr, text_size=statTxtSize, bgcolor=color.new(color.blue, 70), text_halign=text.align_center)
+    table.merge_cells(statTbl, 0, 0, 2, 0)
 
     // Column headers
-    table.cell(tbl, 0, 1, "Metric", text_color=statTxtClr, text_size=txtSize, text_halign=text.align_left)
-    table.cell(tbl, 1, 1, "Value", text_color=statTxtClr, text_size=txtSize, text_halign=text.align_right)
-    table.cell(tbl, 2, 1, "", text_color=statTxtClr, text_size=txtSize)
-
-    // Row helper
-    statRow(tblRef, int row, string label, string val, color valClr) =>
-        table.cell(tblRef, 0, row, label, text_color=statTxtClr, text_size=txtSize, text_halign=text.align_left)
-        table.cell(tblRef, 1, row, val, text_color=valClr, text_size=txtSize, text_halign=text.align_right)
-        table.merge_cells(tblRef, 1, row, 2, row)
+    table.cell(statTbl, 0, 1, "Metric", text_color=statTxtClr, text_size=statTxtSize, text_halign=text.align_left)
+    table.cell(statTbl, 1, 1, "Value", text_color=statTxtClr, text_size=statTxtSize, text_halign=text.align_right)
+    table.cell(statTbl, 2, 1, "", text_color=statTxtClr, text_size=statTxtSize)
 
     // Overall stats
-    statRow(tbl, 2, "Total Trades", str.tostring(totalTrades), statTxtClr)
-    statRow(tbl, 3, "Win / Loss", str.tostring(totalWins) + " / " + str.tostring(totalLosses), statTxtClr)
-    statRow(tbl, 4, "Win Rate", str.tostring(winRate, "#.1") + "%", winRate >= 50 ? color.lime : color.orange)
-    statRow(tbl, 5, "Profit Factor", str.tostring(profitFactor, "#.##"), profitFactor >= 1 ? color.lime : color.red)
-    statRow(tbl, 6, "Net Profit", str.tostring(netProfit, "#.##"), netProfit >= 0 ? color.lime : color.red)
+    statRow(statTbl, 2, "Total Trades", str.tostring(totalTrades), statTxtClr, statTxtClr, statTxtSize)
+    statRow(statTbl, 3, "Win / Loss", str.tostring(totalWins) + " / " + str.tostring(totalLosses), statTxtClr, statTxtClr, statTxtSize)
+    statRow(statTbl, 4, "Win Rate", str.tostring(winRate, "#.1") + "%", winRate >= 50 ? color.lime : color.orange, statTxtClr, statTxtSize)
+    statRow(statTbl, 5, "Profit Factor", str.tostring(profitFactor, "#.##"), profitFactor >= 1 ? color.lime : color.red, statTxtClr, statTxtSize)
+    statRow(statTbl, 6, "Net Profit", str.tostring(netProfit, "#.##"), netProfit >= 0 ? color.lime : color.red, statTxtClr, statTxtSize)
 
     // Averages
-    statRow(tbl, 7, "Avg Win", str.tostring(avgWin, "#.##"), color.lime)
-    statRow(tbl, 8, "Avg Loss", str.tostring(avgLoss, "#.##"), color.red)
+    statRow(statTbl, 7, "Avg Win", str.tostring(avgWin, "#.##"), color.lime, statTxtClr, statTxtSize)
+    statRow(statTbl, 8, "Avg Loss", str.tostring(avgLoss, "#.##"), color.red, statTxtClr, statTxtSize)
     rr = avgLoss != 0 ? avgWin / avgLoss : 0.0
-    statRow(tbl, 9, "Avg RR Ratio", str.tostring(rr, "#.##"), rr >= 1 ? color.lime : color.orange)
+    statRow(statTbl, 9, "Avg RR Ratio", str.tostring(rr, "#.##"), rr >= 1 ? color.lime : color.orange, statTxtClr, statTxtSize)
 
     // Risk metrics
-    statRow(tbl, 10, "Max Drawdown", str.tostring(maxDrawdown, "#.##"), maxDrawdown > 0 ? color.red : statTxtClr)
-    statRow(tbl, 11, "Sharpe Ratio", str.tostring(sharpeRatio, "#.##"), sharpeRatio >= 1 ? color.lime : sharpeRatio >= 0 ? color.orange : color.red)
+    statRow(statTbl, 10, "Max Drawdown", str.tostring(maxDrawdown, "#.##"), maxDrawdown > 0 ? color.red : statTxtClr, statTxtClr, statTxtSize)
+    statRow(statTbl, 11, "Sharpe Ratio", str.tostring(sharpeRatio, "#.##"), sharpeRatio >= 1 ? color.lime : sharpeRatio >= 0 ? color.orange : color.red, statTxtClr, statTxtSize)
 
     // Streaks
-    statRow(tbl, 12, "Max Consec. Wins", str.tostring(maxConsecWins), color.lime)
-    statRow(tbl, 13, "Max Consec. Losses", str.tostring(maxConsecLosses), color.red)
+    statRow(statTbl, 12, "Max Consec. Wins", str.tostring(maxConsecWins), color.lime, statTxtClr, statTxtSize)
+    statRow(statTbl, 13, "Max Consec. Losses", str.tostring(maxConsecLosses), color.red, statTxtClr, statTxtSize)
 
     // Long/Short breakdown
-    table.cell(tbl, 0, 14, "Long / Short", text_color=statTxtClr, text_size=txtSize, bgcolor=color.new(color.blue, 70), text_halign=text.align_center)
-    table.merge_cells(tbl, 0, 14, 2, 14)
-    statRow(tbl, 15, "Long (W/L)", str.tostring(longWins) + " / " + str.tostring(longLosses) + "  (" + str.tostring(longWinRate, "#.1") + "%)", color.lime)
-    statRow(tbl, 16, "Short (W/L)", str.tostring(shortWins) + " / " + str.tostring(shortLosses) + "  (" + str.tostring(shortWinRate, "#.1") + "%)", color.red)
+    table.cell(statTbl, 0, 14, "Long / Short", text_color=statTxtClr, text_size=statTxtSize, bgcolor=color.new(color.blue, 70), text_halign=text.align_center)
+    table.merge_cells(statTbl, 0, 14, 2, 14)
+    statRow(statTbl, 15, "Long (W/L)", str.tostring(longWins) + " / " + str.tostring(longLosses) + "  (" + str.tostring(longWinRate, "#.1") + "%)", color.lime, statTxtClr, statTxtSize)
+    statRow(statTbl, 16, "Short (W/L)", str.tostring(shortWins) + " / " + str.tostring(shortLosses) + "  (" + str.tostring(shortWinRate, "#.1") + "%)", color.red, statTxtClr, statTxtSize)
 // }
 
 
